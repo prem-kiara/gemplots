@@ -1,0 +1,61 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: dhanam_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d dhanam_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/dhanam_test
+      TEST_DATABASE_URL: postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam_test
+      TEST_DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/dhanam_test
+      DATABASE_URL: postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: api/package-lock.json }
+
+      # CI gate 1: migrations apply cleanly on a fresh DB + seed loads.
+      - name: Migrate + seed
+        run: |
+          bash db/migrate.sh
+          psql "$DATABASE_URL_ADMIN" -v ON_ERROR_STOP=1 -f db/seed.sql
+
+      - name: Install
+        working-directory: api
+        run: npm ci
+
+      # CI gate: lint/typecheck.
+      - name: Typecheck
+        working-directory: api
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # CI gates 2-4: concurrency, expiry, webhook-idempotency, RERA-cap, hold-limit, audit.
+      - name: Tests (release-gating + unit)
+        working-directory: api
+        run: npm test
+
+      # CI gate 5: OpenAPI matches implemented routes.
+      - name: OpenAPI route parity
+        working-directory: api
+        run: npm run openapi:parity
+
+      - name: Build
+        working-directory: api
+        run: npm run build

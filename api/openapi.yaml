@@ -1,0 +1,284 @@
+openapi: 3.0.3
+info:
+  title: Dhanam Plots API
+  version: 1.0.0
+  description: >
+    Phase 1 plots booking platform. Authored from docs/03-api-contracts.md and kept in sync with
+    implemented routes (CI gate). Money is integer paise; timestamps are ISO-8601 UTC.
+servers:
+  - url: /
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+        request_id: { type: string }
+    TokenPair:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            phone: { type: string, nullable: true }
+            full_name: { type: string }
+            role: { type: string }
+    BlockResult:
+      type: object
+      properties:
+        booking_id: { type: string, format: uuid }
+        plot_id: { type: string, format: uuid }
+        status: { type: string, enum: [BLOCKED] }
+        total_price_paise: { type: integer, format: int64 }
+        advance_cap_paise: { type: integer, format: int64 }
+        min_advance_paise: { type: integer, format: int64 }
+        blocked_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        hold_minutes: { type: integer }
+    PaymentOrder:
+      type: object
+      properties:
+        payment_id: { type: string, format: uuid }
+        gateway: { type: string }
+        gateway_order_id: { type: string }
+        gateway_key_id: { type: string }
+        amount_paise: { type: integer, format: int64 }
+        currency: { type: string, enum: [INR] }
+        booking_id: { type: string, format: uuid }
+  responses:
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+security: []
+paths:
+  /health:
+    get:
+      summary: Liveness + dependency check
+      responses:
+        '200': { description: ok }
+  /v1/auth/otp/request:
+    post:
+      summary: Request an OTP (E.164 phone)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties: { phone: { type: string } }
+      responses:
+        '200': { description: challenge issued }
+        '429': { $ref: '#/components/responses/Error' }
+  /v1/auth/otp/verify:
+    post:
+      summary: Verify OTP → tokens (creates the customer on first verify)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_id, phone, otp]
+              properties:
+                challenge_id: { type: string }
+                phone: { type: string }
+                otp: { type: string }
+      responses:
+        '200':
+          description: tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '400': { $ref: '#/components/responses/Error' }
+  /v1/auth/refresh:
+    post:
+      summary: Rotate refresh token (reuse detection revokes the chain)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties: { refresh_token: { type: string } }
+      responses:
+        '200': { description: rotated tokens }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/auth/logout:
+    post:
+      summary: Revoke a refresh token
+      security: [{ bearer: [] }]
+      responses: { '204': { description: revoked } }
+  /v1/auth/admin/login:
+    post:
+      summary: Admin email + password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401': { $ref: '#/components/responses/Error' }
+  /v1/me/device-tokens:
+    post:
+      summary: Register an FCM device token
+      security: [{ bearer: [] }]
+      responses: { '204': { description: stored } }
+  /v1/projects:
+    get:
+      summary: List published projects
+      parameters:
+        - { in: query, name: district, schema: { type: string } }
+        - { in: query, name: state, schema: { type: string } }
+      responses: { '200': { description: list } }
+  /v1/projects/{id}:
+    get:
+      summary: Project detail
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: project }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/projects/{id}/map:
+    get:
+      summary: Active site map with live plot statuses (lazy-repaired)
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: map }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/plots/{id}:
+    get:
+      summary: Plot detail (lazy-repaired)
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: plot }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/plots/{id}/block:
+    post:
+      summary: Block a plot (hold engine)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: hold created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BlockResult' }
+        '200': { description: idempotent replay of an existing hold }
+        '409': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/bookings/{id}/payment-order:
+    post:
+      summary: Create a gateway payment order (RERA-capped)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_paise]
+              properties: { amount_paise: { type: integer, format: int64 } }
+      responses:
+        '201':
+          description: order created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentOrder' }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/bookings/{id}:
+    get:
+      summary: Booking detail (poll target; lazy-repaired)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: booking }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/me/bookings:
+    get:
+      summary: List the caller's bookings
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: limit, schema: { type: integer } }
+        - { in: query, name: cursor, schema: { type: string } }
+      responses: { '200': { description: list } }
+  /v1/webhooks/payments/{gateway}:
+    post:
+      summary: Gateway payment webhook (signature-verified; the only path that confirms a booking)
+      parameters: [{ in: path, name: gateway, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: processed/duplicate/ignored/manual-review }
+        '400': { $ref: '#/components/responses/Error' }
+  /v1/admin/projects:
+    post:
+      summary: Create a DRAFT project
+      security: [{ bearer: [] }]
+      responses:
+        '201': { description: created }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/admin/projects/{id}:
+    patch:
+      summary: Patch non-controlled project fields
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses: { '200': { description: updated } }
+  /v1/admin/projects/{id}/plots:bulk:
+    post:
+      summary: Bulk plot CSV upload (all-or-nothing; ?dry_run=true validates only)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: query, name: dry_run, schema: { type: boolean } }
+      responses: { '201': { description: 'inserted + errors' } }
+  /v1/admin/projects/{id}/site-maps:
+    post:
+      summary: Upload a site-map image (new inactive version)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses: { '201': { description: uploaded } }
+  /v1/admin/site-maps/{id}/geometries:
+    post:
+      summary: Replace plot geometries for a map version
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses: { '200': { description: saved } }
+  /v1/admin/site-maps/{id}/activate:
+    post:
+      summary: Activate a map version (guarded by MAP_INCOMPLETE)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: activated }
+        '409': { $ref: '#/components/responses/Error' }

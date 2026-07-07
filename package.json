@@ -1,0 +1,12 @@
+{
+  "name": "dhanam-plots",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["api"],
+  "scripts": {
+    "migrate": "bash db/migrate.sh",
+    "seed": "psql \"$DATABASE_URL_ADMIN\" -v ON_ERROR_STOP=1 -f db/seed.sql",
+    "api:dev": "npm --workspace api run start:dev",
+    "api:test": "npm --workspace api run test"
+  }
+}
