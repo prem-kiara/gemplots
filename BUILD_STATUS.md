@@ -5,7 +5,11 @@ Spec authority: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) +
 (hold engine, expiry, approvals schema, audit) is the foundation being re-pointed to the
 no-integrations Gem Housing flows.
 
-Verified against real local Postgres 15 + Redis 7 (no DB mocks). **59 tests pass across 8 suites.**
+Verified against real local Postgres 15 + Redis 7 (no DB mocks). **60 backend tests pass across
+8 suites**, plus the full customer→admin golden path verified in a real browser.
+
+**Demo-ready.** See [DEMO.md](DEMO.md) for the presentation runbook. Start: `bash scripts/demo-reset.sh`
+then `cd api && npm run build && node dist/main.js` and `npm --workspace web run dev` (web on :3001).
 
 ## Slice status (Gem Housing build order P0–P8)
 
@@ -15,9 +19,21 @@ Verified against real local Postgres 15 + Redis 7 (no DB mocks). **59 tests pass
 | **P1 / D1** | Email service + email-OTP auth | ✅ **Done** | `V5__email_identity.sql`; EmailService+outbox+Console/Smtp drivers; auth by email; `PATCH /me`; dev_otp double-gate; 38 tests green; parity green |
 | **P2 / D2** | **Reserve flow** (critical) | ✅ **Done** | `POST /plots/{id}/reserve` (replaces `/block`), `/reservations/{id}/confirm` + `/resend-otp`, RESERVE_PLOT approval handler + `/admin/approvals` endpoints, two-phase expiry + approval auto-withdraw, `NotificationFeedService.feed()`, payments dormancy (conditional mount, SQL fixtures); TP-P gates 1/2/3/7 green; 47 tests green; parity green (payments off) |
 | **P3 / D3** | Admin visibility + local storage + demo seed | ✅ **Done** | Notifications read endpoints (`/admin/notifications` feed/count/read/read-all, `/me/notifications`), `/admin/emails`, `/admin/bookings`, `/admin/audit-logs` (SA+AUDITOR), `/admin/settings` (RO), `/admin/dashboard/summary` (10 §5.3.3, lazy-repaired); NEW_CUSTOMER/MAP_ACTIVATED/PLOTS_IMPORTED feed events; `StorageService` LocalDiskDriver + static `GET /files/*`; `GET /projects/{idOrSlug}`; Gem Meadows → 12 plots + aligned SVG site plan; `scripts/demo-reset.sh`; 59 tests green; parity green |
-| P4 | Customer web app (mobile-first) | ⬜ | `web/` not yet created |
-| P5 | Admin portal core | ⬜ | |
-| P6 | Admin catalog UI + local storage | ⬜ | |
+| **P4+P5 / D4** | Web app — customer face + admin portal core | ✅ **Done** | `web/` Next.js 14 + Tailwind + TanStack Query, port 3001, `/api` proxy, PWA. Customer: home, email-OTP login (dev-OTP banner), project detail + interactive `PlotMap` (overlay aligned to image, fixed in D4.1), plot sheet, reserve journey (stepper/OTP/countdown/poll), `/me`. Admin: login, shell + bell, dashboard, approvals inbox + review detail (guardrails, email-verified, ConfirmDialog approve/reject), notifications, emails outbox, audit. **Golden path verified in-browser end-to-end.** |
+| P6 | Admin catalog UI (project create/edit + **polygon editor**) | ⬜ | Deferred (docs/11 ledger); seed has 12 aligned plots so the demo needs no editor |
+| P7 | Remaining maker-checker actions (cancel/refund/price/publish…) | ⬜ | Only RESERVE_PLOT built; schema + framework ready |
+| P8 | Hardening + reconciliation + payments go-live + Playwright e2e | ⬜ | Deferred (docs/11 ledger) |
+
+## Known follow-ups (non-blocking)
+- **Flaky backend test**: one intermittent failure observed once in ~5 runs (non-reproducing on
+  retry; 60/60 green on 4 consecutive runs). Likely a timing-sensitive expiry/countdown boundary
+  (`expires_at = now() - 1 min` race) or a Redis-reconnect timing artifact from the F6 change.
+  Investigate + pin the clock before wiring e2e into CI.
+- **Map endpoint slug**: `GET /projects/{id}/map` takes a UUID only; the web app fetches detail
+  by slug first (works). Optional: accept slug there too for symmetry.
+- **Customer email not in payloads**: JWT/booking responses omit the address, so a few UI strings
+  say "your registered email". Add `email` to the `user` object / booking detail if literal
+  interpolation is wanted.
 | P7 | Remaining maker-checker actions | ⬜ | |
 | P8 | Hardening-lite + deploy | ⬜ | |
 
