@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MapPlot, PlotStatus } from '@/lib/types';
 import { formatINR } from '@/lib/format';
 import { S } from '@/lib/strings';
@@ -44,6 +44,25 @@ export function PlotMap({
   const containerRef = useRef<HTMLDivElement>(null);
   const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
 
+  // Aspect-fit layer size: the img + svg layer must be EXACTLY the image's aspect box, otherwise
+  // the unit-viewBox polygon overlay stretches over letterbox padding and misaligns (docs/10 §7.4).
+  const [layer, setLayer] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cw = el.clientWidth;
+      const ch = el.clientHeight;
+      if (!cw || !ch || !width || !height) return;
+      const s = Math.min(cw / width, ch / height);
+      setLayer({ w: Math.round(width * s), h: Math.round(height * s) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width, height]);
+
   // Pointer bookkeeping for pan + pinch.
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
   const dragState = useRef<{
@@ -59,8 +78,9 @@ export function PlotMap({
     (scale: number, x: number, y: number) => {
       const el = containerRef.current;
       if (!el) return { x, y };
-      const w = el.clientWidth;
-      const h = el.clientHeight;
+      // Clamp against the aspect-fit layer, not the (possibly taller) container.
+      const w = layer?.w ?? el.clientWidth;
+      const h = layer?.h ?? el.clientHeight;
       const maxX = ((scale - 1) * w) / 2;
       const maxY = ((scale - 1) * h) / 2;
       return {
@@ -68,7 +88,7 @@ export function PlotMap({
         y: Math.max(-maxY, Math.min(maxY, y)),
       };
     },
-    [],
+    [layer],
   );
 
   const applyZoom = useCallback(
@@ -175,7 +195,7 @@ export function PlotMap({
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full touch-none select-none overflow-hidden rounded-card bg-line"
+      className="relative flex h-full w-full touch-none select-none items-center justify-center overflow-hidden rounded-card bg-line"
       onPointerDown={(e) => {
         onPointerDown(e);
         onDoubleTapArea(e);
@@ -185,9 +205,13 @@ export function PlotMap({
       onPointerCancel={onPointerUp}
       onWheel={onWheel}
     >
+      {/* Transform layer sized EXACTLY to the image's aspect box — img and the unit-viewBox svg
+          share this rect, so normalized polygons land on the drawn plots (no letterbox skew). */}
       <div
-        className="absolute inset-0 origin-center"
+        className="relative origin-center"
         style={{
+          width: layer ? `${layer.w}px` : '100%',
+          height: layer ? `${layer.h}px` : '100%',
           transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
         }}
       >
@@ -198,7 +222,7 @@ export function PlotMap({
           width={width}
           height={height}
           draggable={false}
-          className="pointer-events-none h-full w-full object-contain"
+          className="pointer-events-none h-full w-full"
         />
         <svg
           viewBox="0 0 1 1"
