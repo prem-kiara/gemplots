@@ -21,6 +21,8 @@ export class ConfigService {
     otp_verify_max_attempts: 5,
     min_advance_paise: 1_000_000,
     reminder_offsets_minutes: [360, 60],
+    reserve_otp_minutes: 30, // Gem Housing reserve flow (08 §5)
+    admin_decision_hours: 48,
   };
 
   async get<T = any>(key: string): Promise<T> {

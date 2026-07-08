@@ -10,11 +10,11 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_DB: dhanam_test
+          POSTGRES_DB: gemplots_test
           POSTGRES_HOST_AUTH_METHOD: trust
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U postgres -d dhanam_test"
+          --health-cmd "pg_isready -U postgres -d gemplots_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
       redis:
         image: redis:7
@@ -22,14 +22,15 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/dhanam_test
-      TEST_DATABASE_URL: postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam_test
-      TEST_DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/dhanam_test
-      DATABASE_URL: postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam_test
+      DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/gemplots_test
+      TEST_DATABASE_URL: postgres://gemplots_app:gemplots_app_dev@localhost:5432/gemplots_test
+      TEST_DATABASE_URL_ADMIN: postgres://postgres@localhost:5432/gemplots_test
+      DATABASE_URL: postgres://gemplots_app:gemplots_app_dev@localhost:5432/gemplots_test
     steps:
       - uses: actions/checkout@v4
+      # F1 — npm workspaces hoist the lockfile to the repo ROOT; there is no api/package-lock.json.
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: api/package-lock.json }
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: package-lock.json }
 
       # CI gate 1: migrations apply cleanly on a fresh DB + seed loads.
       - name: Migrate + seed
@@ -37,25 +38,20 @@ jobs:
           bash db/migrate.sh
           psql "$DATABASE_URL_ADMIN" -v ON_ERROR_STOP=1 -f db/seed.sql
 
-      - name: Install
-        working-directory: api
+      - name: Install (root — installs the api workspace)
         run: npm ci
 
-      # CI gate: lint/typecheck.
+      # CI gate: typecheck.
       - name: Typecheck
-        working-directory: api
-        run: npx tsc --noEmit -p tsconfig.json
+        run: npm --workspace api exec -- tsc --noEmit -p tsconfig.json
 
-      # CI gates 2-4: concurrency, expiry, webhook-idempotency, RERA-cap, hold-limit, audit.
+      # CI gates 2-4: reserve concurrency, expiry, webhook-idempotency (dormant), cap, hold-limit, audit.
       - name: Tests (release-gating + unit)
-        working-directory: api
-        run: npm test
+        run: npm --workspace api run test
 
       # CI gate 5: OpenAPI matches implemented routes.
       - name: OpenAPI route parity
-        working-directory: api
-        run: npm run openapi:parity
+        run: npm --workspace api run openapi:parity
 
       - name: Build
-        working-directory: api
-        run: npm run build
+        run: npm --workspace api run build

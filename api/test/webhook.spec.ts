@@ -80,7 +80,7 @@ describe('TP §2.3 webhook verification & idempotency', () => {
 
     const p = await db(app).query(`SELECT * FROM payments WHERE gateway_order_id=$1`, [o.orderId]);
     expect(p.rows[0].status).toBe('SUCCESS');
-    expect(p.rows[0].receipt_number).toMatch(/^DHN-\d{4}-\d{6}$/);
+    expect(p.rows[0].receipt_number).toMatch(/^GEM-\d{4}-\d{6}$/);
     const b = await db(app).query(`SELECT status FROM bookings WHERE id=$1`, [o.bookingId]);
     expect(b.rows[0].status).toBe('BOOKED');
     const plot = await db(app).query(`SELECT status FROM plots WHERE id=$1`, [o.plotId]);

@@ -7,12 +7,12 @@ import { DbService } from '../src/common/db/db.service';
 import { RedisService } from '../src/common/redis/redis.service';
 
 /**
- * Owner connection for test cleanup only. The app runs as dhanam_app (non-owner) which — by
+ * Owner connection for test cleanup only. The app runs as gemplots_app (non-owner) which — by
  * design (Invariant 10) — cannot TRUNCATE or DELETE audit_logs. Tests reset via the owner.
  */
 const adminPool = new Pool({
   connectionString:
-    process.env.TEST_DATABASE_URL_ADMIN ?? 'postgres://localhost:5432/dhanam_test',
+    process.env.TEST_DATABASE_URL_ADMIN ?? 'postgres://localhost:5432/gemplots_test',
 });
 
 /**
@@ -43,12 +43,12 @@ export async function resetDynamic(_app: INestApplication) {
   // Drop any non-seed projects created by tests (and their children).
   await adminPool.query(`DELETE FROM plot_geometries WHERE plot_id IN
       (SELECT p.id FROM plots p JOIN projects pr ON pr.id=p.project_id
-        WHERE pr.slug <> 'dhanam-green-meadows')`);
+        WHERE pr.slug <> 'gem-meadows')`);
   await adminPool.query(`DELETE FROM site_maps WHERE project_id IN
-      (SELECT id FROM projects WHERE slug <> 'dhanam-green-meadows')`);
+      (SELECT id FROM projects WHERE slug <> 'gem-meadows')`);
   await adminPool.query(`DELETE FROM plots WHERE project_id IN
-      (SELECT id FROM projects WHERE slug <> 'dhanam-green-meadows')`);
-  await adminPool.query(`DELETE FROM projects WHERE slug <> 'dhanam-green-meadows'`);
+      (SELECT id FROM projects WHERE slug <> 'gem-meadows')`);
+  await adminPool.query(`DELETE FROM projects WHERE slug <> 'gem-meadows'`);
   await adminPool.query(`UPDATE plots SET status='AVAILABLE'`);
   await adminPool.query(`DELETE FROM users WHERE role='CUSTOMER' AND phone LIKE '+919%'`);
 }

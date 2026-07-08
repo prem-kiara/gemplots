@@ -22,8 +22,26 @@ function loadDotEnv() {
   }
 }
 
+/** F5 — refuse to boot in production with unset or dev-default secrets. */
+function assertProdSecrets() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const devDefaults: Record<string, string> = {
+    JWT_SECRET: 'dev-access-secret-change-me',
+    JWT_REFRESH_SECRET: 'dev-refresh-secret-change-me',
+    OTP_PEPPER: 'dev-otp-pepper-change-me',
+  };
+  const bad = Object.keys(devDefaults).filter(
+    (k) => !process.env[k] || process.env[k] === devDefaults[k],
+  );
+  if (bad.length)
+    throw new Error(
+      `Refusing to start in production: set non-default ${bad.join(', ')} (see .env.example).`,
+    );
+}
+
 async function bootstrap() {
   loadDotEnv();
+  assertProdSecrets();
   const mode = process.env.WORKER_MODE ?? 'api';
   const app = await NestFactory.create(AppModule, { bufferLogs: false });
 

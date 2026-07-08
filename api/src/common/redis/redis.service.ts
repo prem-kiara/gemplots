@@ -17,7 +17,9 @@ export class RedisService implements OnModuleDestroy {
       this.client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
         maxRetriesPerRequest: 1,
         lazyConnect: false,
-        retryStrategy: () => null, // do not spin forever; correctness lives in Postgres
+        // F6 — capped exponential backoff so Redis reconnects when it comes back, instead of
+        // giving up forever. Errors stay swallowed below; correctness never depends on Redis.
+        retryStrategy: (times) => Math.min(times * 200, 5000),
       });
       this.client.on('error', () => {
         /* swallowed — Redis is UX-only */

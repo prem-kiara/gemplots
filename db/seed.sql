@@ -1,18 +1,18 @@
 -- seed.sql — dev/staging ONLY (DM §7). Idempotent: safe to run repeatedly.
--- Admin password for every admin user below: Dhanam@Dev1 (argon2id).
+-- Admin password for every admin user below: GemHousing@Dev1 (argon2id).
 
 -- Admin users (one per role) + one customer.
 INSERT INTO users (email, full_name, role, password_hash) VALUES
-  ('super@dev.dhanam',  'Super Admin', 'SUPER_ADMIN',
-   '$argon2id$v=19$m=65536,t=3,p=4$SaeJtivHplgBzJbo1Jty6w$ti+E9d6jHQPZ8XJhifj36DbbLVER3dSSsFztKD5c8bw'),
-  ('ops@dev.dhanam',    'Ops User',    'OPERATIONS',
-   '$argon2id$v=19$m=65536,t=3,p=4$SaeJtivHplgBzJbo1Jty6w$ti+E9d6jHQPZ8XJhifj36DbbLVER3dSSsFztKD5c8bw'),
-  ('sales@dev.dhanam',  'Sales User',  'SALES',
-   '$argon2id$v=19$m=65536,t=3,p=4$SaeJtivHplgBzJbo1Jty6w$ti+E9d6jHQPZ8XJhifj36DbbLVER3dSSsFztKD5c8bw'),
-  ('finance@dev.dhanam','Finance User','FINANCE',
-   '$argon2id$v=19$m=65536,t=3,p=4$SaeJtivHplgBzJbo1Jty6w$ti+E9d6jHQPZ8XJhifj36DbbLVER3dSSsFztKD5c8bw'),
-  ('auditor@dev.dhanam','Auditor',     'AUDITOR',
-   '$argon2id$v=19$m=65536,t=3,p=4$SaeJtivHplgBzJbo1Jty6w$ti+E9d6jHQPZ8XJhifj36DbbLVER3dSSsFztKD5c8bw')
+  ('super@gemhousing.in',  'Super Admin', 'SUPER_ADMIN',
+   '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk'),
+  ('ops@gemhousing.in',    'Ops User',    'OPERATIONS',
+   '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk'),
+  ('sales@gemhousing.in',  'Sales User',  'SALES',
+   '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk'),
+  ('finance@gemhousing.in','Finance User','FINANCE',
+   '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk'),
+  ('auditor@gemhousing.in','Auditor',     'AUDITOR',
+   '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO users (phone, full_name, role) VALUES ('+919800000001', 'Demo Customer', 'CUSTOMER')
@@ -23,23 +23,23 @@ DO $$
 DECLARE
   v_seller uuid; v_project uuid; v_map uuid; v_p1 uuid; v_p2 uuid; v_p3 uuid;
 BEGIN
-  IF EXISTS (SELECT 1 FROM projects WHERE slug = 'dhanam-green-meadows') THEN RETURN; END IF;
+  IF EXISTS (SELECT 1 FROM projects WHERE slug = 'gem-meadows') THEN RETURN; END IF;
 
-  INSERT INTO sellers (name, type) VALUES ('Dhanam Realty (Own)', 'OWN_COMPANY')
+  INSERT INTO sellers (name, type) VALUES ('Gem Housing (Own)', 'OWN_COMPANY')
     RETURNING id INTO v_seller;
 
   INSERT INTO projects
     (seller_id, name, slug, description, address_line, district, state, pincode,
      status, rera_registered, rera_number, max_advance_percentage)
   VALUES
-    (v_seller, 'Dhanam Green Meadows', 'dhanam-green-meadows',
+    (v_seller, 'Gem Meadows', 'gem-meadows',
      'Premium DTCP-approved plots with parks and wide roads.',
-     'Green Meadows Layout, Saravanampatti', 'Coimbatore', 'Tamil Nadu', '641035',
+     'Gem Meadows Layout, Saravanampatti', 'Coimbatore', 'Tamil Nadu', '641035',
      'PUBLISHED', true, 'TN/29/LAYOUT/DEMO', 10.00)
     RETURNING id INTO v_project;
 
   INSERT INTO site_maps (project_id, version, image_key, width_px, height_px, is_active)
-  VALUES (v_project, 1, 'seed/green-meadows-v1.png', 2000, 1400, true)
+  VALUES (v_project, 1, 'seed/gem-meadows-v1.png', 2000, 1400, true)
     RETURNING id INTO v_map;
 
   INSERT INTO plots (project_id, plot_number, facing, dimensions_text, area_sqft, price_paise)

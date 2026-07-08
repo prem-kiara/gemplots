@@ -68,12 +68,12 @@ describe('TP §3 auth', () => {
   it('admin login with seed credentials works; wrong password → INVALID_CREDENTIALS', async () => {
     const ok = await http
       .post('/v1/auth/admin/login')
-      .send({ email: 'ops@dev.dhanam', password: 'Dhanam@Dev1' })
+      .send({ email: 'ops@gemhousing.in', password: 'GemHousing@Dev1' })
       .expect(200);
     expect(ok.body.user.role).toBe('OPERATIONS');
     const bad = await http
       .post('/v1/auth/admin/login')
-      .send({ email: 'ops@dev.dhanam', password: 'wrong' })
+      .send({ email: 'ops@gemhousing.in', password: 'wrong' })
       .expect(401);
     expect(bad.body.error.code).toBe('INVALID_CREDENTIALS');
   });
@@ -81,7 +81,7 @@ describe('TP §3 auth', () => {
   it('refresh rotates; reusing an old refresh token → REFRESH_REUSED and chain revoked', async () => {
     const login = await http
       .post('/v1/auth/admin/login')
-      .send({ email: 'sales@dev.dhanam', password: 'Dhanam@Dev1' })
+      .send({ email: 'sales@gemhousing.in', password: 'GemHousing@Dev1' })
       .expect(200);
     const rt0 = login.body.refresh_token;
     const r1 = await http.post('/v1/auth/refresh').send({ refresh_token: rt0 }).expect(200);
@@ -96,7 +96,7 @@ describe('TP §3 auth', () => {
   it('RBAC: AUDITOR (read-only) cannot create a project; OPERATIONS can', async () => {
     const auditor = await http
       .post('/v1/auth/admin/login')
-      .send({ email: 'auditor@dev.dhanam', password: 'Dhanam@Dev1' })
+      .send({ email: 'auditor@gemhousing.in', password: 'GemHousing@Dev1' })
       .expect(200);
     await http
       .post('/v1/admin/projects')
@@ -106,7 +106,7 @@ describe('TP §3 auth', () => {
 
     const ops = await http
       .post('/v1/auth/admin/login')
-      .send({ email: 'ops@dev.dhanam', password: 'Dhanam@Dev1' })
+      .send({ email: 'ops@gemhousing.in', password: 'GemHousing@Dev1' })
       .expect(200);
     const created = await http
       .post('/v1/admin/projects')

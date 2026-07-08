@@ -1,70 +1,80 @@
-# Build Status
+# Build Status — Gem Plots (Gem Housing)
 
-Implementation progress against [docs/07-build-instructions.md](docs/07-build-instructions.md).
-Backend built and verified against real Postgres 15 + Redis 7 (no DB mocks — the invariants live
-in the DB). **31 tests pass across 5 suites**, including every release-gating test in
-[docs/06-test-plan.md](docs/06-test-plan.md) §2.
+Spec authority: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) +
+[docs/09-build-instructions-v2.md](docs/09-build-instructions-v2.md). The v1 NestJS backend
+(hold engine, expiry, approvals schema, audit) is the foundation being re-pointed to the
+no-integrations Gem Housing flows.
 
-## Slice status
+Verified against real local Postgres 15 + Redis 7 (no DB mocks). **34 tests pass across 6 suites.**
+
+## Slice status (Gem Housing build order P0–P8)
 
 | # | Slice | Status | Evidence |
 |---|---|---|---|
-| 1 | Bootstrap: monorepo, docker-compose, migrations, seed, health | ✅ Done | Fresh DB migrates (idempotent) + seeds (idempotent); `/health` → `{db:true,redis:true}` |
-| 2 | Auth: OTP → JWT/refresh, admin login, RBAC | ✅ Done | `test/auth.spec.ts` (7 tests): OTP, rate limit, refresh rotation + reuse-chain revoke, RBAC, argon2 admin login |
-| 3 | Admin: projects CRUD + bulk plot CSV | ✅ Backend done | Project create/patch, CSV all-or-nothing upload (rupees→paise). UI: Next.js pending |
-| 4 | Admin: site-map upload + polygon geometries | ✅ Backend done | Upload/geometries/activate with `MAP_INCOMPLETE` guard. Polygon *editor UI*: Next.js pending |
-| 5 | Customer read APIs | ✅ Done | `/projects`, `/projects/{id}`, `/projects/{id}/map`, `/plots/{id}` with lazy repair |
-| 6 | **Hold engine** | ✅ Done (gate green) | `test/concurrency.spec.ts` — **TP §2.1**: 50 concurrent → exactly one 201 |
-| 7 | Expiry: sweeper + TTL + lazy repair | ✅ Done (gate green) | `test/expiry.spec.ts` — **TP §2.2** incl. worker-down |
-| 8 | Payment order (RERA cap) | ✅ Done (gate green) | `test/cap-limits-audit.spec.ts` — **TP §2.4** cap ±1 paise, integer math |
-| 9 | **Payment webhook** | ✅ Done (gate green) | `test/webhook.spec.ts` — **TP §2.3** all 8 cases incl. Invariant-7 no-client-confirm |
-| 10 | Customer dashboards + notifications | ◑ Partial | `GET /bookings/{id}`, `/me/bookings` done; notifications recorded to table; **FCM/SMS senders + BullMQ reminder jobs + Flutter app: pending** |
-| 11 | Admin dashboards | ⬜ Not started | Aggregate endpoints + Next.js pages |
-| 12 | Maker-checker | ⬜ Not started | `approvals` table + constraints exist; 10 handlers + Approvals screens pending |
-| 13 | Reconciliation | ⬜ Not started | Tables + adapter seam exist; nightly job pending |
-| 14 | Hardening | ⬜ Not started | Structured logs partial; OTel/metrics/load/restore drills pending |
+| **P0** | Fix-list + rebrand + first commit | ✅ **Done** | F1–F7 applied; full Dhanam→Gem rebrand; 34 tests green; parity green; app boots, `/health` ok |
+| P1 | Email service + email-OTP auth | ⬜ Next | `emails_outbox`/`portal_notifications` tables + `otp_purpose` enum already migrated in P0 |
+| P2 | **Reserve flow** (critical) | ⬜ | enum values + `reserve_confirmed_at` + active-index already migrated in P0 |
+| P3 | Notifications + admin read surface | ⬜ | |
+| P4 | Customer web app (mobile-first) | ⬜ | `web/` not yet created |
+| P5 | Admin portal core | ⬜ | |
+| P6 | Admin catalog UI + local storage | ⬜ | |
+| P7 | Remaining maker-checker actions | ⬜ | |
+| P8 | Hardening-lite + deploy | ⬜ | |
 
-## What runs today (verified end-to-end)
+## P0 detail
 
-A full customer journey works through the live server (smoke-tested):
-OTP → JWT → browse projects → open map → block a plot (idempotent) → create RERA-capped payment
-order → signature-verified webhook confirms booking → poll shows BOOKED with receipt
-`DHN-2026-000001`. Over-cap orders, duplicate webhooks, and bad signatures are all rejected
-correctly.
+**Review fixes (docs/09 F1–F7):**
+- F1 — CI now installs at repo root (`npm ci`), `cache-dependency-path: package-lock.json`,
+  runs workspace scripts via `npm --workspace api …`. Repo was already `git init`-ed.
+- F2 — `POST /admin/projects/:id/plots:bulk` → `…/plots/bulk` (Express 4 parsed `:bulk` as a
+  param). *Regression test in `test/p0-fixes.spec.ts`.*
+- F3 — idempotent replay returns **200 + `Idempotency-Replay: true`** (was 201) via
+  `@Res({passthrough})`. *Regression test.*
+- F4 — hold-limit check moved inside the TX behind a per-user `SELECT … FOR UPDATE`; parallel
+  blocks by one user can no longer overshoot `max_active_holds`. *Regression test (3 parallel → 2).*
+- F5 — production boot refuses unset/dev-default `JWT_SECRET`/`JWT_REFRESH_SECRET`/`OTP_PEPPER`.
+- F6 — Redis `retryStrategy` is capped exponential backoff (was give-up-forever); errors still
+  swallowed (Redis stays UX-only).
+- F7 — `catalog-read.getProject` reads `global_hold_minutes` through `ConfigService`, not raw SQL.
 
-## Invariants — enforcement evidence
+**Rebrand (docs/08 §3):** databases `gemplots`/`gemplots_test`, role `gemplots_app`, seed
+“Gem Housing (Own)” / “Gem Meadows” (`gem-meadows`), admin emails `@gemhousing.in`, admin
+password `GemHousing@Dev1`, receipt prefix `GEM-`. `grep -ri dhanam` is clean across
+api/src, db, infra, and root config.
 
-1. Postgres source of truth — Redis disabled in tests, all correctness tests still pass ✅
-2. Row lock on block — `booking.service.ts` `FOR UPDATE OF p`; TP §2.1 ✅
-3. One active booking/plot — `uniq_active_booking_per_plot`; TP §2.1 ✅
-4. Idempotency-Key + webhook dedup — TP §2.3b/c, §2.5 ✅
-5. `expires_at` frozen — TP §2.2c ✅
-6. Triple-defended expiry — TP §2.2a/b/d ✅
-7. Booking BOOKED only via verified webhook — TP §2.3h ✅
-8. RERA cap `min(project,10)%` integer — TP §2.4 ✅
-9. Maker-checker — DB CHECK `maker_is_not_checker` in place; handlers pending (slice 12)
-10. Audit append-only — `REVOKE UPDATE,DELETE`; TP §2.7 (app role denied) ✅
+**Additive §4 schema landed in P0** (kept the existing suite green): full `plot_status` /
+`booking_status` enum sets (dormant `BLOCKED`/`BOOKED`/`MANUAL_REVIEW` retained for the payment
+module), `otp_purpose` enum, `RESERVE_PLOT` action, `bookings.reserve_confirmed_at`,
+`uniq_active_booking_per_plot` WHERE-list updated, `portal_notifications` + `emails_outbox`
+tables, `reserve_otp_minutes`/`admin_decision_hours` settings.
 
-## Remaining work (in priority order)
+## SPEC-QUESTION (flagged for review)
 
-1. **Slice 12 — maker-checker** (10 action handlers + approvals endpoints). Highest-value
-   remaining backend; schema + constraints already in place.
-2. **Slice 10 tail** — real FCM/SMS senders + BullMQ reminder jobs (T-6h/T-1h).
-3. **Slice 13 — reconciliation** nightly job.
-4. **Admin panel (Next.js)** — slices 3/4/11/12 UIs (polygon editor, dashboards, approvals inbox).
-5. **Flutter customer app** — booking flow screens against the API.
-6. **Slice 14 — hardening** — OTel, metrics, load + restore drills, security review.
+docs/08 §3–§4 asks to "rewrite migrations in place" for the **whole** §4 including the
+email-identity change (`users.email NOT NULL`, `otp_challenges` phone→email). That change is
+**breaking** — it can't move without P1's auth code, and P0's DoD requires "full existing suite
+green." So P0 applied only the **additive** parts of §4 and **deferred the email-identity change
+to P1**, where it lands with the email-OTP auth code as migration `V5`. This keeps slice
+boundaries clean and honors the DoD. If the reviewer wants the full schema frozen pre-commit
+instead, P1's auth rewrite would need to fold into P0.
+
+## Test inventory (34)
+
+`concurrency` (2, TP §2.1 gate) • `expiry` (6, TP §2.2 gate) • `webhook` (8, TP §2.3, dormant
+payments on fixtures) • `cap-limits-audit` (8, cap/limits/audit-immutability) • `auth` (7) •
+`p0-fixes` (3, F2/F3/F4). All release gates from the v1 plan remain green under the new schema.
 
 ## How to run locally
 
 ```bash
-# from repo root — Postgres + Redis must be running (or: docker compose -f infra/docker-compose.yml up -d)
-createdb dhanam
-DATABASE_URL_ADMIN=postgres://localhost:5432/dhanam bash db/migrate.sh
-DATABASE_URL_ADMIN=postgres://localhost:5432/dhanam psql "$DATABASE_URL_ADMIN" -f db/seed.sql
-cd api && npm install && npm run build && node dist/main.js   # :3000, WORKER_MODE from .env
+createdb gemplots
+DATABASE_URL_ADMIN=postgres://localhost:5432/gemplots bash db/migrate.sh
+DATABASE_URL_ADMIN=postgres://localhost:5432/gemplots psql "$DATABASE_URL_ADMIN" -f db/seed.sql
+cd api && npm install && npm run build && node dist/main.js   # :3000
 
-# tests (needs a dhanam_test DB migrated + seeded the same way)
-TEST_DATABASE_URL=postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam_test \
-TEST_DATABASE_URL_ADMIN=postgres://localhost:5432/dhanam_test npm test
+# tests (needs gemplots_test migrated + seeded the same way)
+TEST_DATABASE_URL=postgres://gemplots_app:gemplots_app_dev@localhost:5432/gemplots_test \
+TEST_DATABASE_URL_ADMIN=postgres://localhost:5432/gemplots_test npm test
 ```
+
+Admin login (dev): `ops@gemhousing.in` / `GemHousing@Dev1`.

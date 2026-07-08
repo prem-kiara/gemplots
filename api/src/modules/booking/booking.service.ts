@@ -55,6 +55,8 @@ export class BookingService {
     if (user.status === 'BLOCKED') throw Err.forbidden('USER_BLOCKED', 'User blocked');
 
     const maxHolds = await this.config.int('max_active_holds_per_user');
+    // Fast, friendly pre-check outside the TX. NOT authoritative — the same count is re-run
+    // inside the TX under a per-user row lock (F4) so concurrent blocks can't overshoot the cap.
     const active = Number(
       (
         await this.db.query(
@@ -82,6 +84,24 @@ export class BookingService {
     let booking;
     try {
       booking = await this.db.tx(async (tx) => {
+        // F4 — serialize this user's concurrent blocks on their own row (locked BEFORE the plot,
+        // a consistent lock order across all callers → no deadlock), then re-count active holds
+        // authoritatively. Without this, N parallel blocks by one user could each pass the
+        // outside-TX pre-check and overshoot max_active_holds.
+        await tx.query(`SELECT id FROM users WHERE id=$1 FOR UPDATE`, [userId]);
+        const activeNow = Number(
+          (
+            await tx.query(
+              `SELECT count(*)::int AS n FROM bookings WHERE user_id=$1 AND status='BLOCKED'`,
+              [userId],
+            )
+          ).rows[0].n,
+        );
+        if (activeNow >= maxHolds)
+          throw Err.conflict('HOLD_LIMIT_EXCEEDED', 'Active hold limit reached', {
+            max_active_holds: maxHolds,
+          });
+
         const locked = await tx.query(
           `SELECT p.id, p.price_paise, pr.hold_minutes_override
              FROM plots p JOIN projects pr ON pr.id = p.project_id

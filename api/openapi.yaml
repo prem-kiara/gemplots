@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Dhanam Plots API
+  title: Gem Plots API
   version: 1.0.0
   description: >
     Phase 1 plots booking platform. Authored from docs/03-api-contracts.md and kept in sync with
@@ -254,7 +254,7 @@ paths:
       security: [{ bearer: [] }]
       parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
       responses: { '200': { description: updated } }
-  /v1/admin/projects/{id}/plots:bulk:
+  /v1/admin/projects/{id}/plots/bulk:
     post:
       summary: Bulk plot CSV upload (all-or-nothing; ?dry_run=true validates only)
       security: [{ bearer: [] }]

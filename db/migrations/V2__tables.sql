@@ -144,6 +144,7 @@ CREATE TABLE bookings (
   hold_minutes         int NOT NULL,
   blocked_at           timestamptz NOT NULL DEFAULT now(),
   expires_at           timestamptz NOT NULL,
+  reserve_confirmed_at timestamptz,             -- set when the customer email-OTP succeeds (08 §5)
   confirmed_at         timestamptz,
   closed_at            timestamptz,
   idempotency_key      text NOT NULL,
@@ -153,9 +154,11 @@ CREATE TABLE bookings (
 );
 CREATE TRIGGER trg_bookings_updated BEFORE UPDATE ON bookings
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
--- INVARIANT 3 — the backstop against double-booking races:
+-- INVARIANT 3 — the backstop against double-booking races. Active statuses hold the plot
+-- exclusively; includes the reserve-flow states plus the dormant payment states (08 §4).
 CREATE UNIQUE INDEX uniq_active_booking_per_plot ON bookings(plot_id)
-  WHERE status IN ('BLOCKED','BOOKED','MANUAL_REVIEW');
+  WHERE status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL','RESERVED',
+                   'BLOCKED','BOOKED','MANUAL_REVIEW');
 
 -- 5.8 payments
 CREATE TABLE payments (
@@ -178,7 +181,7 @@ CREATE TABLE payments (
 CREATE TRIGGER trg_payments_updated BEFORE UPDATE ON payments
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- receipt number sequence (DHN-YYYY-NNNNNN formatted in app)
+-- receipt number sequence (GEM-YYYY-NNNNNN formatted in app; dormant with payments)
 CREATE SEQUENCE receipt_seq START 1;
 
 -- 5.9 webhook_events
@@ -243,6 +246,37 @@ CREATE TABLE notifications (
   payload    jsonb NOT NULL DEFAULT '{}',
   sent_at    timestamptz,
   error      text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- portal_notifications — admin feed + customer notices (08 §7). Consumed from slice P3.
+CREATE TABLE portal_notifications (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  audience    text NOT NULL CHECK (audience IN ('ADMIN','CUSTOMER')),
+  user_id     uuid REFERENCES users(id),           -- required when audience='CUSTOMER'
+  type        text NOT NULL,
+  title       text NOT NULL,
+  body        text NOT NULL DEFAULT '',
+  entity_type text,
+  entity_id   text,
+  read_at     timestamptz,   -- ADMIN feed: shared read state (any admin clears it) — Phase-1 simplification
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT customer_notif_has_user CHECK (audience <> 'CUSTOMER' OR user_id IS NOT NULL)
+);
+CREATE INDEX idx_portal_notif_feed
+  ON portal_notifications(audience, created_at DESC) WHERE read_at IS NULL;
+
+-- emails_outbox — every email passes through, regardless of driver (08 §6). Consumed from P1.
+CREATE TABLE emails_outbox (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  to_email   text NOT NULL,
+  template   text NOT NULL,
+  subject    text NOT NULL,
+  body_text  text NOT NULL,
+  payload    jsonb NOT NULL DEFAULT '{}',
+  status     text NOT NULL CHECK (status IN ('LOGGED','SENT','FAILED')),  -- LOGGED = console driver
+  error      text,
+  sent_at    timestamptz,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE reconciliation_runs (

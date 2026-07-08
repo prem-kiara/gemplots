@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../common/db/db.service';
+import { ConfigService } from '../../common/config/config.service';
 import { S3Service } from '../../common/storage/s3.service';
 import { Err } from '../../common/errors';
 import { effectiveCapPct } from '../../common/util';
@@ -10,6 +11,7 @@ import { ExpiryService } from '../booking/expiry.service';
 export class CatalogReadService {
   constructor(
     private readonly db: DbService,
+    private readonly config: ConfigService,
     private readonly s3: S3Service,
     private readonly expiry: ExpiryService,
   ) {}
@@ -67,8 +69,7 @@ export class CatalogReadService {
       )
     ).rows.reduce((acc: any, r: any) => ({ ...acc, [r.status]: r.n }), {});
     const holdMinutes =
-      pr.hold_minutes_override ??
-      Number((await this.db.query(`SELECT value FROM global_settings WHERE key='global_hold_minutes'`)).rows[0]?.value ?? 1440);
+      pr.hold_minutes_override ?? (await this.config.int('global_hold_minutes'));
     return {
       id: pr.id,
       name: pr.name,

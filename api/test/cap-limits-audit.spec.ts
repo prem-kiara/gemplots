@@ -47,14 +47,14 @@ describe('TP §2.4/§2.5/§2.7 cap, limits, audit immutability', () => {
 
   it('§2.4 project cap 15% but rera_registered → effective cap stays 10%', async () => {
     await db(app).query(
-      `UPDATE projects SET max_advance_percentage=15 WHERE slug='dhanam-green-meadows'`,
+      `UPDATE projects SET max_advance_percentage=15 WHERE slug='gem-meadows'`,
     );
     const plotId = await firstPlotId(app);
     const [userId] = await makeCustomers(app, 1);
     const b = await booking.block(userId, plotId, randomUUID());
     expect(b.advance_cap_paise).toBe(18000000); // 10% not 15%
     await db(app).query(
-      `UPDATE projects SET max_advance_percentage=10 WHERE slug='dhanam-green-meadows'`,
+      `UPDATE projects SET max_advance_percentage=10 WHERE slug='gem-meadows'`,
     );
   });
 
@@ -123,7 +123,7 @@ describe('TP §2.4/§2.5/§2.7 cap, limits, audit immutability', () => {
   it('§2.7 app role cannot UPDATE or DELETE audit_logs', async () => {
     const plotId = await firstPlotId(app);
     const [userId] = await makeCustomers(app, 1);
-    await booking.block(userId, plotId, randomUUID()); // writes an audit row as dhanam_app
+    await booking.block(userId, plotId, randomUUID()); // writes an audit row as gemplots_app
 
     await expect(db(app).query(`UPDATE audit_logs SET action='tamper'`)).rejects.toThrow(
       /permission denied/i,

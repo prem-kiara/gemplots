@@ -7,8 +7,9 @@ import {
   Post,
   Query,
   Req,
+  Res,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { BookingService } from './booking.service';
 import { BookingReadService } from './booking-read.service';
 import { CurrentUser, Roles } from '../auth/decorators';
@@ -22,22 +23,28 @@ export class BookingController {
     private readonly reads: BookingReadService,
   ) {}
 
+  // Status is set explicitly on the response (passthrough) so a replay can return 200 while a
+  // fresh hold returns 201. A fixed @HttpCode(201) would override the replay status at send time.
   @Roles('CUSTOMER')
   @Post('plots/:id/block')
-  @HttpCode(201)
   async block(
     @CurrentUser() user: JwtUser,
     @Param('id') plotId: string,
     @Headers('idempotency-key') idemKey: string,
     @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const r = await this.booking.block(user.sub, plotId, idemKey, {
       requestId: reqId(req),
       ip: clientIp(req) ?? undefined,
     });
-    // A replay returns 200 per API §1.4; Nest sets 201 above, so override via passthrough.
-    if (r.replay) req.res?.status(200).setHeader('Idempotency-Replay', 'true');
     const { replay, ...body } = r;
+    if (replay) {
+      res.status(200);
+      res.setHeader('Idempotency-Replay', 'true');
+    } else {
+      res.status(201);
+    }
     return body;
   }
 

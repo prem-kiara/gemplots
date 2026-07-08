@@ -30,7 +30,7 @@ export function slugify(name: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-/** Receipt number DHN-YYYY-NNNNNN from a Postgres sequence value (CF §5.7b). */
+/** Receipt number GEM-YYYY-NNNNNN from a Postgres sequence value (CF §5.7b; dormant). */
 export function formatReceipt(seqValue: number, year: number): string {
-  return `DHN-${year}-${String(seqValue).padStart(6, '0')}`;
+  return `GEM-${year}-${String(seqValue).padStart(6, '0')}`;
 }

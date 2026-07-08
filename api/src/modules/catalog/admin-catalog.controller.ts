@@ -57,7 +57,7 @@ export class AdminCatalogController {
   /** CSV bulk upload. Body is raw CSV text (Content-Type text/csv) or {csv} JSON.
    *  Production wires multipart; this keeps it dependency-light + testable (API §5.1). */
   @Roles('OPERATIONS', 'SUPER_ADMIN')
-  @Post('projects/:id/plots:bulk')
+  @Post('projects/:id/plots/bulk')
   @HttpCode(201)
   async bulkPlots(
     @CurrentUser() u: JwtUser,

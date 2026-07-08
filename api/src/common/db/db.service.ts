@@ -21,7 +21,7 @@ export class DbService implements OnModuleDestroy {
     this.pool = new Pool({
       connectionString:
         process.env.DATABASE_URL ??
-        'postgres://dhanam_app:dhanam_app_dev@localhost:5432/dhanam',
+        'postgres://gemplots_app:gemplots_app_dev@localhost:5432/gemplots',
       max: Number(process.env.PG_POOL_MAX ?? 10),
     });
   }
