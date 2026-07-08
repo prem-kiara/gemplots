@@ -38,7 +38,8 @@ export function db(app: INestApplication): DbService {
 export async function resetDynamic(_app: INestApplication) {
   await adminPool.query(`TRUNCATE
     webhook_events, payments, bookings, reconciliation_items, reconciliation_runs,
-    approvals, notifications, otp_challenges, refresh_tokens, device_tokens, audit_logs
+    approvals, notifications, emails_outbox, portal_notifications,
+    otp_challenges, refresh_tokens, device_tokens, audit_logs
     RESTART IDENTITY CASCADE`);
   // Drop any non-seed projects created by tests (and their children).
   await adminPool.query(`DELETE FROM plot_geometries WHERE plot_id IN
@@ -50,7 +51,14 @@ export async function resetDynamic(_app: INestApplication) {
       (SELECT id FROM projects WHERE slug <> 'gem-meadows')`);
   await adminPool.query(`DELETE FROM projects WHERE slug <> 'gem-meadows'`);
   await adminPool.query(`UPDATE plots SET status='AVAILABLE'`);
-  await adminPool.query(`DELETE FROM users WHERE role='CUSTOMER' AND phone LIKE '+919%'`);
+  // Customers are keyed by email now (08 §4). Test customers use @test.gemhousing.in; also sweep
+  // any legacy placeholder rows left from the V5 phone→email backfill. Keep the seed customer.
+  await adminPool.query(
+    `DELETE FROM users WHERE role='CUSTOMER'
+       AND (email LIKE '%@test.gemhousing.in'
+            OR email LIKE '%@placeholder.gemhousing.in'
+            OR phone LIKE '+919%')`,
+  );
 }
 
 export async function closeAdminPool() {
@@ -61,14 +69,14 @@ export async function firstPlotId(app: INestApplication): Promise<string> {
   return (await db(app).query(`SELECT id FROM plots ORDER BY plot_number LIMIT 1`)).rows[0].id;
 }
 
-/** Create N fresh customer users, return their ids. */
+/** Create N fresh customer users (keyed by unique email now — 08 §4), return their ids. */
 export async function makeCustomers(app: INestApplication, n: number): Promise<string[]> {
   const ids: string[] = [];
   for (let i = 0; i < n; i++) {
-    const phone = `+91${9000000000 + i}`; // 10 digits, guaranteed unique per i
+    const email = `cust${i}@test.gemhousing.in`; // unique per i, swept by resetDynamic
     const r = await db(app).query(
-      `INSERT INTO users (phone, role) VALUES ($1,'CUSTOMER') RETURNING id`,
-      [phone],
+      `INSERT INTO users (email, role) VALUES ($1,'CUSTOMER') RETURNING id`,
+      [email],
     );
     ids.push(r.rows[0].id);
   }

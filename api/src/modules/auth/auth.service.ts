@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { DbService } from '../../common/db/db.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { Err } from '../../common/errors';
 import { OtpService } from './otp.service';
 import { TokenService } from './token.service';
@@ -8,6 +9,7 @@ import { JwtUser, Role } from './auth.types';
 
 export interface PublicUser {
   id: string;
+  email: string;
   phone: string | null;
   full_name: string;
   role: Role;
@@ -24,23 +26,33 @@ export class AuthService {
     private readonly db: DbService,
     private readonly otp: OtpService,
     private readonly tokens: TokenService,
+    private readonly audit: AuditService,
   ) {}
 
-  requestOtp(phone: string) {
-    return this.otp.request(phone);
+  /**
+   * Request a LOGIN OTP for an email. dev_otp is double-gated (Invariant 12): returned only when
+   * EMAIL_MODE is console (or unset) AND NODE_ENV !== 'production'. Env is read here at REQUEST
+   * time (no caching) so a test can flip NODE_ENV around a single request.
+   */
+  async requestOtp(email: string) {
+    const r = await this.otp.request(email, 'LOGIN');
+    const consoleMode = (process.env.EMAIL_MODE ?? 'console') === 'console';
+    const nonProd = process.env.NODE_ENV !== 'production';
+    const devOtp = consoleMode && nonProd ? r.otp : undefined;
+    return { challengeId: r.challengeId, retryAfterSeconds: r.retryAfterSeconds, devOtp };
   }
 
-  /** Verify OTP → find-or-create customer → issue tokens. */
+  /** Verify LOGIN OTP → find-or-create customer BY EMAIL → issue tokens. */
   async verifyOtp(
     challengeId: string,
-    phone: string,
+    email: string,
     otp: string,
   ): Promise<TokenPair & { user: PublicUser }> {
-    await this.otp.verify(challengeId, phone, otp);
+    await this.otp.verify(challengeId, email, otp, { purpose: 'LOGIN' });
 
     const user = await this.db.tx(async (tx) => {
       const existing = (
-        await tx.query(`SELECT * FROM users WHERE phone = $1`, [phone])
+        await tx.query(`SELECT * FROM users WHERE email = $1`, [email])
       ).rows[0];
       if (existing) {
         if (existing.status === 'BLOCKED')
@@ -49,8 +61,8 @@ export class AuthService {
       }
       return (
         await tx.query(
-          `INSERT INTO users (phone, role, status) VALUES ($1,'CUSTOMER','ACTIVE') RETURNING *`,
-          [phone],
+          `INSERT INTO users (email, role, status) VALUES ($1,'CUSTOMER','ACTIVE') RETURNING *`,
+          [email],
         )
       ).rows[0];
     });
@@ -76,6 +88,41 @@ export class AuthService {
     if (user.status === 'BLOCKED') throw Err.forbidden('USER_BLOCKED', 'User blocked');
 
     return { ...(await this.issue(user.id, user.role)), user: this.toPublic(user) };
+  }
+
+  /** PATCH /me — customer profile completion (08 §9). Audited in the same TX as the update. */
+  async updateProfile(
+    userId: string,
+    patch: { full_name?: string; phone?: string },
+    ctx: { requestId?: string; ip?: string } = {},
+  ): Promise<PublicUser> {
+    return this.db.tx(async (tx) => {
+      const before = (
+        await tx.query(`SELECT * FROM users WHERE id = $1 FOR UPDATE`, [userId])
+      ).rows[0];
+      if (!before) throw Err.notFound('USER_NOT_FOUND', 'User not found');
+
+      const fullName = patch.full_name ?? before.full_name;
+      const phone = patch.phone !== undefined ? patch.phone : before.phone;
+
+      const after = (
+        await tx.query(
+          `UPDATE users SET full_name = $2, phone = $3 WHERE id = $1 RETURNING *`,
+          [userId, fullName, phone],
+        )
+      ).rows[0];
+
+      await this.audit.log(
+        tx,
+        { id: userId, role: before.role, requestId: ctx.requestId, ip: ctx.ip },
+        'user.update_profile',
+        'user',
+        userId,
+        { full_name: before.full_name, phone: before.phone },
+        { full_name: after.full_name, phone: after.phone },
+      );
+      return this.toPublic(after);
+    });
   }
 
   async refresh(rawToken: string): Promise<TokenPair> {
@@ -104,6 +151,6 @@ export class AuthService {
   }
 
   private toPublic(u: any): PublicUser {
-    return { id: u.id, phone: u.phone, full_name: u.full_name, role: u.role };
+    return { id: u.id, email: u.email, phone: u.phone, full_name: u.full_name, role: u.role };
   }
 }

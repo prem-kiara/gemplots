@@ -22,6 +22,8 @@ export const ADMIN_WRITE_ROLES: Role[] = [
   'FINANCE',
 ];
 
+export type OtpPurpose = 'LOGIN' | 'RESERVE';
+
 export interface JwtUser {
   sub: string;
   role: Role;

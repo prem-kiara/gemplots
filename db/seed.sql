@@ -15,8 +15,10 @@ INSERT INTO users (email, full_name, role, password_hash) VALUES
    '$argon2id$v=19$m=65536,t=3,p=4$K03Y9dTV0sVMj3eVPOnYXQ$4wvFkux1kEWvoLS9MSq+IAvf94QXVRncYNPkLd2btTk')
 ON CONFLICT (email) DO NOTHING;
 
-INSERT INTO users (phone, full_name, role) VALUES ('+919800000001', 'Demo Customer', 'CUSTOMER')
-ON CONFLICT (phone) DO NOTHING;
+-- Demo customer: email is the identity now (08 §4/§9); phone is an optional profile field.
+INSERT INTO users (email, full_name, phone, role)
+VALUES ('customer@demo.gemhousing.in', 'Demo Customer', '+919800000001', 'CUSTOMER')
+ON CONFLICT (email) DO NOTHING;
 
 -- Seller, project, map, plots, geometries (guarded so re-runs are no-ops).
 DO $$

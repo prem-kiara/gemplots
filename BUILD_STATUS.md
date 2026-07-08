@@ -5,15 +5,15 @@ Spec authority: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) +
 (hold engine, expiry, approvals schema, audit) is the foundation being re-pointed to the
 no-integrations Gem Housing flows.
 
-Verified against real local Postgres 15 + Redis 7 (no DB mocks). **34 tests pass across 6 suites.**
+Verified against real local Postgres 15 + Redis 7 (no DB mocks). **38 tests pass across 6 suites.**
 
 ## Slice status (Gem Housing build order P0–P8)
 
 | # | Slice | Status | Evidence |
 |---|---|---|---|
 | **P0** | Fix-list + rebrand + first commit | ✅ **Done** | F1–F7 applied; full Dhanam→Gem rebrand; 34 tests green; parity green; app boots, `/health` ok |
-| P1 | Email service + email-OTP auth | ⬜ Next | `emails_outbox`/`portal_notifications` tables + `otp_purpose` enum already migrated in P0 |
-| P2 | **Reserve flow** (critical) | ⬜ | enum values + `reserve_confirmed_at` + active-index already migrated in P0 |
+| **P1 / D1** | Email service + email-OTP auth | ✅ **Done** | `V5__email_identity.sql`; EmailService+outbox+Console/Smtp drivers; auth by email; `PATCH /me`; dev_otp double-gate; 38 tests green; parity green |
+| P2 | **Reserve flow** (critical) | ⬜ Next | enum values + `reserve_confirmed_at` + active-index already migrated in P0 |
 | P3 | Notifications + admin read surface | ⬜ | |
 | P4 | Customer web app (mobile-first) | ⬜ | `web/` not yet created |
 | P5 | Admin portal core | ⬜ | |
@@ -58,11 +58,31 @@ to P1**, where it lands with the email-OTP auth code as migration `V5`. This kee
 boundaries clean and honors the DoD. If the reviewer wants the full schema frozen pre-commit
 instead, P1's auth rewrite would need to fold into P0.
 
-## Test inventory (34)
+## P1 / D1 detail (email service + email-OTP auth)
+
+- **`V5__email_identity.sql`** (first additive migration post-P0): `users.email` backfilled from
+  phone then `SET NOT NULL`; `customer_has_phone` dropped (phone is optional profile now);
+  `admin_has_password` kept. `otp_challenges`: `phone`→`email` (+backfill+NOT NULL), added
+  `purpose otp_purpose DEFAULT 'LOGIN'` and `booking_id` FK; index `idx_otp_phone_time` →
+  `idx_otp_email_time`.
+- **EmailService** (`api/src/common/email/`): renders subject/body from a templates map (7
+  templates, plain text, signed "— Gem Housing") → **always** inserts an `emails_outbox` row →
+  hands to the `EMAIL_MODE`-selected driver: `ConsoleDriver` (default, status `LOGGED`) or
+  `SmtpDriver` (nodemailer, `SENT`/`FAILED`+error). Driver behind an interface (Invariant 11);
+  send failures recorded, never thrown into a business flow.
+- **Auth pivot**: `otp/request {email}` / `otp/verify {challenge_id,email,otp}`, find-or-create
+  by email, rate limits keyed on email, login OTP via `login_otp` template. `PATCH /v1/me`
+  `{full_name?,phone?}` audited in the same TX. Admin login + refresh rotation unchanged.
+- **dev_otp double-gate (Invariant 12)**: returned only when `EMAIL_MODE` is console/unset AND
+  `NODE_ENV !== 'production'`, read at request time (no caching).
+
+## Test inventory (38)
 
 `concurrency` (2, TP §2.1 gate) • `expiry` (6, TP §2.2 gate) • `webhook` (8, TP §2.3, dormant
-payments on fixtures) • `cap-limits-audit` (8, cap/limits/audit-immutability) • `auth` (7) •
-`p0-fixes` (3, F2/F3/F4). All release gates from the v1 plan remain green under the new schema.
+payments on fixtures) • `cap-limits-audit` (8, cap/limits/audit-immutability) • `auth` (11:
+email happy-path, wrong-OTP attempts, send rate-limit, outbox row asserted, dev_otp present,
+dev_otp hidden in production [TP-P §4], admin login, refresh rotation+reuse chain, PATCH /me +
+audit, RBAC, missing bearer) • `p0-fixes` (3, F2/F3/F4). All release gates remain green.
 
 ## How to run locally
 

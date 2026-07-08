@@ -73,31 +73,41 @@ paths:
         '200': { description: ok }
   /v1/auth/otp/request:
     post:
-      summary: Request an OTP (E.164 phone)
+      summary: Request a login OTP by email (delivered via the email service + outbox)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [phone]
-              properties: { phone: { type: string } }
+              required: [email]
+              properties: { email: { type: string, format: email } }
       responses:
-        '200': { description: challenge issued }
+        '200':
+          description: >-
+            challenge issued; dev_otp present only in console mode + non-production (Invariant 12)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id: { type: string }
+                  retry_after_seconds: { type: integer }
+                  dev_otp: { type: string, nullable: true }
         '429': { $ref: '#/components/responses/Error' }
   /v1/auth/otp/verify:
     post:
-      summary: Verify OTP → tokens (creates the customer on first verify)
+      summary: Verify email OTP → tokens (creates the customer by email on first verify)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [challenge_id, phone, otp]
+              required: [challenge_id, email, otp]
               properties:
                 challenge_id: { type: string }
-                phone: { type: string }
+                email: { type: string, format: email }
                 otp: { type: string }
       responses:
         '200':
@@ -145,6 +155,22 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/TokenPair' }
         '401': { $ref: '#/components/responses/Error' }
+  /v1/me:
+    patch:
+      summary: Update the caller's profile (customer profile completion — 08 §9)
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string }
+                phone: { type: string, nullable: true }
+      responses:
+        '200': { description: updated profile }
+        '403': { $ref: '#/components/responses/Error' }
   /v1/me/device-tokens:
     post:
       summary: Register an FCM device token
