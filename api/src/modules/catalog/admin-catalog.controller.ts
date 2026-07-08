@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   Patch,
@@ -35,6 +36,20 @@ export class AdminCatalogController {
     private readonly plots: PlotService,
     private readonly maps: MapService,
   ) {}
+
+  /** Admin project list incl. DRAFT (the public list is PUBLISHED-only). Read-only → AUDITOR too. */
+  @Roles('OPERATIONS', 'SUPER_ADMIN', 'AUDITOR')
+  @Get('projects')
+  listProjects(@Query('status') status?: string) {
+    return this.projects.adminList(status);
+  }
+
+  /** Full admin project detail incl. plots + site-map versions/geometries. Read-only → AUDITOR. */
+  @Roles('OPERATIONS', 'SUPER_ADMIN', 'AUDITOR')
+  @Get('projects/:id')
+  getProject(@Param('id') id: string) {
+    return this.projects.adminGet(id);
+  }
 
   @Roles('OPERATIONS', 'SUPER_ADMIN')
   @Post('projects')

@@ -15,6 +15,8 @@ import type {
   Notification,
   EmailRow,
   AuditRow,
+  AdminProjectRow,
+  AdminProjectDetail,
 } from './types';
 import { markDevMode } from './devmode';
 
@@ -126,6 +128,26 @@ export function useEmails() {
   return useQuery({
     queryKey: ['admin', 'emails'],
     queryFn: () => api<Page<EmailRow>>('/v1/admin/emails?limit=50'),
+  });
+}
+
+// ---- Admin catalog (P6) ----
+
+export function useAdminProjects(status?: string) {
+  return useQuery({
+    queryKey: ['admin', 'projects', status ?? 'all'],
+    queryFn: () =>
+      api<{ items: AdminProjectRow[] }>(
+        `/v1/admin/projects${status ? `?status=${status}` : ''}`,
+      ),
+  });
+}
+
+export function useAdminProject(id: string) {
+  return useQuery({
+    queryKey: ['admin', 'project', id],
+    queryFn: () => api<AdminProjectDetail>(`/v1/admin/projects/${id}`),
+    enabled: !!id,
   });
 }
 

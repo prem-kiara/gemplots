@@ -233,6 +233,97 @@ export interface AdminBookingRow {
   created_at: string;
 }
 
+// ---- Admin catalog (P6) ----
+
+export type ProjectStatus = 'DRAFT' | 'PUBLISHED' | 'PAUSED' | 'ARCHIVED';
+
+export interface AdminProjectRow {
+  id: string;
+  name: string;
+  slug: string;
+  status: ProjectStatus;
+  district: string;
+  state: string;
+  rera_registered: boolean;
+  plot_count: number;
+  created_at: string;
+}
+
+export interface AdminPlotRow {
+  id: string;
+  plot_number: string;
+  facing: string | null;
+  dimensions_text: string | null;
+  area_sqft: number;
+  price_paise: number;
+  status: PlotStatus;
+}
+
+export interface AdminGeometry {
+  plot_id: string;
+  polygon: number[][]; // normalized [[x,y],...]
+  centroid: number[]; // [x,y] normalized
+}
+
+export interface AdminSiteMap {
+  id: string;
+  version: number;
+  is_active: boolean;
+  image_url: string;
+  width_px: number;
+  height_px: number;
+  created_at: string;
+  geometries: AdminGeometry[];
+}
+
+export interface AdminProjectDetail {
+  id: string;
+  name: string;
+  slug: string;
+  status: ProjectStatus;
+  description: string | null;
+  address_line: string | null;
+  district: string;
+  state: string;
+  pincode: string | null;
+  lat: number | null;
+  lng: number | null;
+  amenities: string[] | null;
+  rera_registered: boolean;
+  rera_number: string | null;
+  max_advance_percentage: number;
+  hold_minutes_override: number | null;
+  plots: AdminPlotRow[];
+  site_maps: AdminSiteMap[];
+}
+
+export interface CreateProjectBody {
+  name: string;
+  description?: string;
+  address_line?: string;
+  district?: string;
+  state?: string;
+  pincode?: string;
+  lat?: number;
+  lng?: number;
+  amenities?: string[];
+  rera_registered?: boolean;
+  rera_number?: string;
+  max_advance_percentage?: number;
+  hold_minutes_override?: number;
+}
+
+export interface BulkResult {
+  inserted: number;
+  errors: { row: number; message: string }[];
+}
+
+export interface UploadMapResult {
+  site_map_id: string;
+  version: number;
+  image_url: string;
+}
+
 export interface AuditRow {
   id: string;
   actor_id: string | null;

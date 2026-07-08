@@ -416,4 +416,60 @@ describe('D3 admin visibility + storage + seed', () => {
     expect(rows.rows[0].audience).toBe('ADMIN');
     expect(rows.rows[0].entity_type).toBe('user');
   });
+
+  // --- Admin project read surface (P6) ------------------------------------------------------
+
+  it('GET /admin/projects lists DRAFT projects; GET /admin/projects/{id} returns plots + maps', async () => {
+    const token = await opsToken();
+
+    // Create a DRAFT project via the admin API.
+    const created = await http
+      .post('/v1/admin/projects')
+      .set('authorization', `Bearer ${token}`)
+      .send({ name: 'P6 Test Estate', district: 'Coimbatore', state: 'Tamil Nadu' })
+      .expect(201);
+    const projectId = created.body.id;
+    expect(created.body.status).toBe('DRAFT');
+
+    // The admin list shows the DRAFT (the public list would not).
+    const list = await http
+      .get('/v1/admin/projects')
+      .set('authorization', `Bearer ${token}`)
+      .expect(200);
+    const found = list.body.items.find((p: any) => p.id === projectId);
+    expect(found).toBeTruthy();
+    expect(found.status).toBe('DRAFT');
+    expect(found.plot_count).toBe(0);
+
+    // A status filter narrows it.
+    const draftsOnly = await http
+      .get('/v1/admin/projects?status=DRAFT')
+      .set('authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(draftsOnly.body.items.every((p: any) => p.status === 'DRAFT')).toBe(true);
+
+    // Import 2 plots, then the detail endpoint reflects them.
+    await http
+      .post(`/v1/admin/projects/${projectId}/plots/bulk?dry_run=false`)
+      .set('authorization', `Bearer ${token}`)
+      .send({
+        csv: 'plot_number,facing,dimensions_text,area_sqft,price_inr\nA-1,E,30x40,1200,1800000\nA-2,W,30x40,1200,1900000',
+      })
+      .expect(201);
+
+    const detail = await http
+      .get(`/v1/admin/projects/${projectId}`)
+      .set('authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(detail.body.plots.length).toBe(2);
+    expect(detail.body.plots[0].plot_number).toBe('A-1');
+    expect(detail.body.plots[0].price_paise).toBe(180000000);
+    expect(Array.isArray(detail.body.site_maps)).toBe(true);
+
+    // Unknown id 404s.
+    await http
+      .get(`/v1/admin/projects/${randomUUID()}`)
+      .set('authorization', `Bearer ${token}`)
+      .expect(404);
+  });
 });

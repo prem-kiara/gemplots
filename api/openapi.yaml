@@ -321,6 +321,12 @@ paths:
         '403': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
   /v1/admin/projects:
+    get:
+      summary: List all projects incl. DRAFT (admin; optional status filter — newest first)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+      responses: { '200': { description: 'project rows incl. plot_count + status' } }
     post:
       summary: Create a DRAFT project
       security: [{ bearer: [] }]
@@ -328,6 +334,13 @@ paths:
         '201': { description: created }
         '403': { $ref: '#/components/responses/Error' }
   /v1/admin/projects/{id}:
+    get:
+      summary: Full admin project detail incl. plots + site-map versions/geometries (any status)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200': { description: 'project incl. plots + site_maps' }
+        '404': { $ref: '#/components/responses/Error' }
     patch:
       summary: Patch non-controlled project fields
       security: [{ bearer: [] }]
