@@ -6,9 +6,10 @@ import { CatalogReadService } from './catalog-read.service';
 import { CatalogController } from './catalog.controller';
 import { AdminCatalogController } from './admin-catalog.controller';
 import { BookingModule } from '../booking/booking.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-  imports: [BookingModule], // for ExpiryService (lazy repair on reads)
+  imports: [BookingModule, NotificationModule], // ExpiryService (lazy repair) + feed events
   controllers: [CatalogController, AdminCatalogController],
   providers: [ProjectService, PlotService, MapService, CatalogReadService],
   exports: [ProjectService, PlotService, MapService],

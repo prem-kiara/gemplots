@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../common/db/db.service';
 import { ConfigService } from '../../common/config/config.service';
-import { S3Service } from '../../common/storage/s3.service';
+import { StorageService } from '../../common/storage/storage.service';
 import { Err } from '../../common/errors';
 import { effectiveCapPct } from '../../common/util';
 import { ExpiryService } from '../booking/expiry.service';
+
+/** Canonical UUID shape (docs/10 §5.3.1): a match → id lookup, else treat the value as a slug. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Customer read APIs (API §3). Every read runs lazy repair (CF §3.3) so statuses are truthful. */
 @Injectable()
@@ -12,7 +15,7 @@ export class CatalogReadService {
   constructor(
     private readonly db: DbService,
     private readonly config: ConfigService,
-    private readonly s3: S3Service,
+    private readonly storage: StorageService,
     private readonly expiry: ExpiryService,
   ) {}
 
@@ -52,16 +55,22 @@ export class CatalogReadService {
         max: r.max_price != null ? Number(r.max_price) : null,
       },
       plot_counts: { total: Number(r.total), available: Number(r.available) },
-      cover_image_url: r.cover_key ? this.s3.signedGetUrl(r.cover_key) : null,
+      cover_image_url: r.cover_key ? this.storage.signedGetUrl(r.cover_key) : null,
       amenities: r.amenities,
     }));
   }
 
-  async getProject(id: string) {
+  /** Detail by UUID or slug (docs/10 §5.3.1): a UUID matches the id column, else the slug. */
+  async getProject(idOrSlug: string) {
+    const byId = UUID_RE.test(idOrSlug);
     const pr = (
-      await this.db.query(`SELECT * FROM projects WHERE id=$1 AND status='PUBLISHED'`, [id])
+      await this.db.query(
+        `SELECT * FROM projects WHERE ${byId ? 'id' : 'slug'}=$1 AND status='PUBLISHED'`,
+        [idOrSlug],
+      )
     ).rows[0];
     if (!pr) throw Err.notFound('PROJECT_NOT_FOUND', 'Project not found');
+    const id = pr.id;
     const counts = (
       await this.db.query(
         `SELECT status, count(*)::int AS n FROM plots WHERE project_id=$1 GROUP BY status`,
@@ -118,7 +127,7 @@ export class CatalogReadService {
 
     return {
       map_version: map.version,
-      image_url: this.s3.signedGetUrl(map.image_key),
+      image_url: this.storage.signedGetUrl(map.image_key),
       width_px: map.width_px,
       height_px: map.height_px,
       plots: plots.map((p) => ({

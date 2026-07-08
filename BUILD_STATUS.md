@@ -5,7 +5,7 @@ Spec authority: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) +
 (hold engine, expiry, approvals schema, audit) is the foundation being re-pointed to the
 no-integrations Gem Housing flows.
 
-Verified against real local Postgres 15 + Redis 7 (no DB mocks). **47 tests pass across 7 suites.**
+Verified against real local Postgres 15 + Redis 7 (no DB mocks). **59 tests pass across 8 suites.**
 
 ## Slice status (Gem Housing build order P0–P8)
 
@@ -14,7 +14,7 @@ Verified against real local Postgres 15 + Redis 7 (no DB mocks). **47 tests pass
 | **P0** | Fix-list + rebrand + first commit | ✅ **Done** | F1–F7 applied; full Dhanam→Gem rebrand; 34 tests green; parity green; app boots, `/health` ok |
 | **P1 / D1** | Email service + email-OTP auth | ✅ **Done** | `V5__email_identity.sql`; EmailService+outbox+Console/Smtp drivers; auth by email; `PATCH /me`; dev_otp double-gate; 38 tests green; parity green |
 | **P2 / D2** | **Reserve flow** (critical) | ✅ **Done** | `POST /plots/{id}/reserve` (replaces `/block`), `/reservations/{id}/confirm` + `/resend-otp`, RESERVE_PLOT approval handler + `/admin/approvals` endpoints, two-phase expiry + approval auto-withdraw, `NotificationFeedService.feed()`, payments dormancy (conditional mount, SQL fixtures); TP-P gates 1/2/3/7 green; 47 tests green; parity green (payments off) |
-| P3 | Notifications + admin read surface | ⬜ | |
+| **P3 / D3** | Admin visibility + local storage + demo seed | ✅ **Done** | Notifications read endpoints (`/admin/notifications` feed/count/read/read-all, `/me/notifications`), `/admin/emails`, `/admin/bookings`, `/admin/audit-logs` (SA+AUDITOR), `/admin/settings` (RO), `/admin/dashboard/summary` (10 §5.3.3, lazy-repaired); NEW_CUSTOMER/MAP_ACTIVATED/PLOTS_IMPORTED feed events; `StorageService` LocalDiskDriver + static `GET /files/*`; `GET /projects/{idOrSlug}`; Gem Meadows → 12 plots + aligned SVG site plan; `scripts/demo-reset.sh`; 59 tests green; parity green |
 | P4 | Customer web app (mobile-first) | ⬜ | `web/` not yet created |
 | P5 | Admin portal core | ⬜ | |
 | P6 | Admin catalog UI + local storage | ⬜ | |
@@ -76,13 +76,48 @@ instead, P1's auth rewrite would need to fold into P0.
 - **dev_otp double-gate (Invariant 12)**: returned only when `EMAIL_MODE` is console/unset AND
   `NODE_ENV !== 'production'`, read at request time (no caching).
 
-## Test inventory (38)
+## P3 / D3 detail (admin visibility + local storage + demo seed)
+
+- **Notifications read surface** (08 §7): `NotificationService` gained `listAdmin`/`listCustomer`/
+  `adminUnreadCount`/`markAdminRead`/`markAllAdminRead`. Endpoints on
+  `AdminNotificationController` + `MeNotificationController`: `GET /admin/notifications`
+  (`?unread&cursor&limit`, newest first), `/count`, `POST /:id/read` + `/read-all` (204, shared
+  read state — any admin clears), `GET /me/notifications` (own CUSTOMER rows). Any-admin-role
+  including AUDITOR.
+- **Admin reads** (`AdminReadService` + `AdminReadController`): `GET /admin/emails` (outbox
+  viewer), `/admin/bookings` (joined customer+plot+project, filters), `/admin/audit-logs`
+  (SUPER_ADMIN + AUDITOR, cursor on the monotonic id), `/admin/settings` (RO, SUPER_ADMIN +
+  AUDITOR), `/admin/dashboard/summary` — EXACT 10 §5.3.3 shape, runs `ExpiryService.repairPlots`
+  over pending-booking plots before counting so numbers are truthful.
+- **Feed events**: `NEW_CUSTOMER` (auth `verifyOtp` on customer row CREATE), `MAP_ACTIVATED`
+  (`MapService.activate`), `PLOTS_IMPORTED` (`PlotService.bulkUpload` commit). Audience ADMIN,
+  best-effort (never thrown into the business flow).
+- **Local-disk storage** (Invariant 11, 08 §8): `StorageService` with `LocalDiskDriver` (default,
+  `STORAGE_MODE=local`) — `putObject` writes `UPLOADS_DIR/<key>` (mkdir -p, `..`-traversal guard),
+  `signedGetUrl` → `/api/files/<key>`; `S3Driver` kept for the `s3` flip. Catalog map upload +
+  reads swapped off the old `S3Service` (deleted). `main.ts` mounts `express.static('/files')`
+  from `UPLOADS_DIR` (`fallthrough:false`, `image/svg+xml` for `.svg`). `uploads/` gitignored.
+- **`GET /projects/{idOrSlug}`** (10 §5.3.1): canonical-UUID → id lookup, else slug. Map route
+  keeps id.
+- **Demo seed**: Gem Meadows expanded to **12 plots** (P-01..P-03 byte-identical — pinned by
+  tests; P-04..P-12 new, areas 1000–2600 sqft, prices 150M–400M paise, varied facings). Layout:
+  row 1 (existing) → horizontal road → row 2 (5 plots) → thin road → row 3 (4 plots + a park).
+  Checked-in `db/assets/gem-meadows-v1.svg` (2000×1400) draws every plot polygon at
+  `normalized×(2000,1400)` so it aligns exactly with `plot_geometries` — plus roads, park+trees,
+  compass, title block. `image_key='seed/gem-meadows-v1.svg'`. `scripts/demo-reset.sh` (drop →
+  create → migrate → seed → copy asset into `api/uploads/seed`, prints demo credentials).
+
+## Test inventory (59)
 
 `concurrency` (2, TP §2.1 gate) • `expiry` (6, TP §2.2 gate) • `webhook` (8, TP §2.3, dormant
 payments on fixtures) • `cap-limits-audit` (8, cap/limits/audit-immutability) • `auth` (11:
 email happy-path, wrong-OTP attempts, send rate-limit, outbox row asserted, dev_otp present,
 dev_otp hidden in production [TP-P §4], admin login, refresh rotation+reuse chain, PATCH /me +
-audit, RBAC, missing bearer) • `p0-fixes` (3, F2/F3/F4). All release gates remain green.
+audit, RBAC, missing bearer) • `p0-fixes` (3, F2/F3/F4) • `reserve-flow` (9, TP-P §3
+Invariant 7′) • `admin-visibility` (12: notifications list/count/read/read-all, AUDITOR read,
+`/me/notifications`, dashboard summary shape + lazy-repair, emails+bookings, audit/settings RBAC,
+storage round-trip + `/files/*` serve + traversal guard, idOrSlug, seed integrity, NEW_CUSTOMER).
+All release gates remain green.
 
 ## How to run locally
 

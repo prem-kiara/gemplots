@@ -14,9 +14,9 @@ export class CatalogController {
   }
 
   @Public()
-  @Get('projects/:id')
-  getProject(@Param('id') id: string) {
-    return this.reads.getProject(id);
+  @Get('projects/:idOrSlug')
+  getProject(@Param('idOrSlug') idOrSlug: string) {
+    return this.reads.getProject(idOrSlug);
   }
 
   @Public()

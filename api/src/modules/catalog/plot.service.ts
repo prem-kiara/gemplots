@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../common/db/db.service';
 import { AuditService, AuditActor } from '../../common/audit/audit.service';
+import { NotificationService } from '../notification/notification.service';
 import { Err } from '../../common/errors';
 import { rupeesToPaise } from '../../common/util';
 
@@ -17,6 +18,7 @@ export class PlotService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
+    private readonly notify: NotificationService,
   ) {}
 
   /**
@@ -24,7 +26,7 @@ export class PlotService {
    * dryRun returns the row errors without inserting.
    */
   async bulkUpload(actor: AuditActor, projectId: string, csv: string, dryRun: boolean) {
-    const project = (await this.db.query(`SELECT id FROM projects WHERE id=$1`, [projectId]))
+    const project = (await this.db.query(`SELECT id, name FROM projects WHERE id=$1`, [projectId]))
       .rows[0];
     if (!project) throw Err.notFound('PROJECT_NOT_FOUND', 'Project not found');
 
@@ -77,6 +79,16 @@ export class PlotService {
       });
       return n;
     });
+    // Admin feed event (08 §7) — best-effort, never throws into the upload flow.
+    if (inserted > 0)
+      await this.notify.feed(
+        'ADMIN',
+        'PLOTS_IMPORTED',
+        `${inserted} plots imported to ${project.name}`,
+        '',
+        'project',
+        projectId,
+      );
     return { inserted, errors: [] };
   }
 

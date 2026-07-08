@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { json } from 'express';
+import express, { json } from 'express';
 import { AppModule } from './app.module';
 import { startWorkers } from './worker';
 
@@ -57,6 +57,27 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
   );
+
+  // Local-disk storage (Invariant 11, 08 §8): serve uploaded blobs read-only at GET /files/*.
+  // signedGetUrl returns '/api/files/...' — the Next proxy strips '/api', so the API mounts at
+  // '/files'. fallthrough:false → a missing file is handled here, not by the SPA/Nest routes.
+  const uploadsDir = process.env.UPLOADS_DIR ?? './uploads';
+  app.use(
+    '/files',
+    express.static(uploadsDir, {
+      fallthrough: false,
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.svg')) res.setHeader('Content-Type', 'image/svg+xml');
+      },
+    }),
+  );
+  // A missing file → clean 404 (fallthrough:false hands an ENOENT/404 error to this scoped
+  // handler; without it the error would reach Nest's filter and surface as 500).
+  app.use('/files', (err: any, _req: any, res: any, next: any) => {
+    if (err) return res.status(err.status ?? 404).json({ error: { code: 'FILE_NOT_FOUND' } });
+    next();
+  });
 
   if (mode === 'worker' || mode === 'all') {
     await startWorkers(app);

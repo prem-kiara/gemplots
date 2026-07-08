@@ -176,8 +176,15 @@ paths:
       responses: { '200': { description: list } }
   /v1/projects/{id}:
     get:
-      summary: Project detail
-      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      summary: Project detail (accepts a UUID or a slug — docs/10 §5.3.1)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          description: >
+            Project id (UUID) OR slug. A canonical-UUID value is looked up by id; anything else is
+            treated as a slug. Customer routes are slug-based.
+          schema: { type: string }
       responses:
         '200': { description: project }
         '404': { $ref: '#/components/responses/Error' }
@@ -354,3 +361,81 @@ paths:
       responses:
         '200': { description: activated }
         '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/notifications:
+    get:
+      summary: Admin notification feed (newest first; any admin role — 08 §7)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: unread, schema: { type: boolean } }
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses: { '200': { description: feed page } }
+  /v1/admin/notifications/count:
+    get:
+      summary: Unread admin notification count (bell polls this every 30 s)
+      security: [{ bearer: [] }]
+      responses: { '200': { description: '{ unread: n }' } }
+  /v1/admin/notifications/{id}/read:
+    post:
+      summary: Mark one admin notification read (shared read state — any admin clears)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses: { '204': { description: marked read } }
+  /v1/admin/notifications/read-all:
+    post:
+      summary: Mark all admin notifications read (shared read state)
+      security: [{ bearer: [] }]
+      responses: { '204': { description: all marked read } }
+  /v1/me/notifications:
+    get:
+      summary: The caller's own notifications (audience CUSTOMER — 08 §7)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses: { '200': { description: feed page } }
+  /v1/admin/emails:
+    get:
+      summary: Outbox viewer — every email the flow generated (demo-mode sent mail — 08 §6)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: to, schema: { type: string } }
+        - { in: query, name: template, schema: { type: string } }
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses: { '200': { description: outbox page } }
+  /v1/admin/bookings:
+    get:
+      summary: Admin bookings list (joined; filter by status/project/email — newest first)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: project_id, schema: { type: string } }
+        - { in: query, name: email, schema: { type: string } }
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses: { '200': { description: bookings page } }
+  /v1/admin/audit-logs:
+    get:
+      summary: Audit trail (SUPER_ADMIN + AUDITOR; filter by entity — API §5.7)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: entity_type, schema: { type: string } }
+        - { in: query, name: entity_id, schema: { type: string } }
+        - { in: query, name: cursor, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer } }
+      responses:
+        '200': { description: audit page }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/admin/settings:
+    get:
+      summary: Read-only global settings (SUPER_ADMIN + AUDITOR — API §5.7)
+      security: [{ bearer: [] }]
+      responses:
+        '200': { description: all settings }
+        '403': { $ref: '#/components/responses/Error' }
+  /v1/admin/dashboard/summary:
+    get:
+      summary: Dashboard summary — approvals/holds/inventory/recent (docs/10 §5.3.3)
+      security: [{ bearer: [] }]
+      responses: { '200': { description: summary } }

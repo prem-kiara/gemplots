@@ -5,6 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { Err } from '../../common/errors';
 import { OtpService } from './otp.service';
 import { TokenService } from './token.service';
+import { NotificationService } from '../notification/notification.service';
 import { JwtUser, Role } from './auth.types';
 
 export interface PublicUser {
@@ -27,6 +28,7 @@ export class AuthService {
     private readonly otp: OtpService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly notify: NotificationService,
   ) {}
 
   /**
@@ -50,6 +52,7 @@ export class AuthService {
   ): Promise<TokenPair & { user: PublicUser }> {
     await this.otp.verify(challengeId, email, otp, { purpose: 'LOGIN' });
 
+    let created = false;
     const user = await this.db.tx(async (tx) => {
       const existing = (
         await tx.query(`SELECT * FROM users WHERE email = $1`, [email])
@@ -59,6 +62,7 @@ export class AuthService {
           throw Err.forbidden('USER_BLOCKED', 'User blocked');
         return existing;
       }
+      created = true;
       return (
         await tx.query(
           `INSERT INTO users (email, role, status) VALUES ($1,'CUSTOMER','ACTIVE') RETURNING *`,
@@ -66,6 +70,18 @@ export class AuthService {
         )
       ).rows[0];
     });
+
+    // First login = a new customer row was created (08 §7). Post-commit admin feed event;
+    // best-effort — never breaks the login flow.
+    if (created)
+      await this.notify.feed(
+        'ADMIN',
+        'NEW_CUSTOMER',
+        `New customer ${email} signed up`,
+        '',
+        'user',
+        user.id,
+      );
 
     return { ...(await this.issue(user.id, user.role)), user: this.toPublic(user) };
   }

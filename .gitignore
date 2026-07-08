@@ -6,3 +6,7 @@ dist/
 coverage/
 .DS_Store
 *.tsbuildinfo
+
+# Local-disk storage driver writes here (Invariant 11 / 08 §8) — never committed.
+uploads/
+api/uploads/

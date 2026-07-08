@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '../../common/db/db.service';
 import { AuditService, AuditActor } from '../../common/audit/audit.service';
-import { S3Service } from '../../common/storage/s3.service';
+import { StorageService } from '../../common/storage/storage.service';
+import { NotificationService } from '../notification/notification.service';
 import { Err } from '../../common/errors';
 
 @Injectable()
@@ -9,7 +10,8 @@ export class MapService {
   constructor(
     private readonly db: DbService,
     private readonly audit: AuditService,
-    private readonly s3: S3Service,
+    private readonly storage: StorageService,
+    private readonly notify: NotificationService,
   ) {}
 
   async uploadMap(
@@ -33,7 +35,7 @@ export class MapService {
         ).rows[0].v,
       ) || 1;
     const key = `site-maps/${projectId}/v${version}`;
-    await this.s3.putObject(key, image, contentType);
+    await this.storage.putObject(key, image, contentType);
     return this.db.tx(async (tx) => {
       const m = (
         await tx.query(
@@ -46,7 +48,7 @@ export class MapService {
         version,
         site_map_id: m.id,
       });
-      return { site_map_id: m.id, version, image_url: this.s3.signedGetUrl(key) };
+      return { site_map_id: m.id, version, image_url: this.storage.signedGetUrl(key) };
     });
   }
 
@@ -122,7 +124,7 @@ export class MapService {
         missing_plot_ids: missing,
       });
 
-    return this.db.tx(async (tx) => {
+    const result = await this.db.tx(async (tx) => {
       await tx.query(`UPDATE site_maps SET is_active=false WHERE project_id=$1 AND is_active`, [
         map.project_id,
       ]);
@@ -132,6 +134,20 @@ export class MapService {
       });
       return { site_map_id: siteMapId, version: map.version, active: true };
     });
+
+    // Admin feed event (08 §7) — best-effort, never rolls back the activation.
+    const project = (
+      await this.db.query(`SELECT name FROM projects WHERE id=$1`, [map.project_id])
+    ).rows[0];
+    await this.notify.feed(
+      'ADMIN',
+      'MAP_ACTIVATED',
+      `Site map v${map.version} activated for ${project?.name ?? 'a project'}`,
+      '',
+      'site_map',
+      siteMapId,
+    );
+    return result;
   }
 }
 
