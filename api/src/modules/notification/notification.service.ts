@@ -37,6 +37,34 @@ export class NotificationService {
     }
   }
 
+  /**
+   * Portal-notification writer (08 §7). Inserts one portal_notifications row for the admin feed
+   * or a customer's own notices. Emitted at every reserve-flow transition (08 §5). Failures are
+   * logged and NEVER thrown into a business flow — a missed feed row must not roll back a
+   * committed reservation. (The feed endpoints land in D3; this is only the writer.)
+   */
+  async feed(
+    audience: 'ADMIN' | 'CUSTOMER',
+    type: string,
+    title: string,
+    body = '',
+    entityType?: string | null,
+    entityId?: string | null,
+    userId?: string | null,
+  ): Promise<void> {
+    try {
+      await this.db.query(
+        `INSERT INTO portal_notifications
+           (audience, user_id, type, title, body, entity_type, entity_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [audience, userId ?? null, type, title, body, entityType ?? null, entityId ?? null],
+      );
+      this.logger.log(`feed ${audience} ${type}`);
+    } catch (e: any) {
+      this.logger.warn(`feed failed (${audience}/${type}): ${e.message}`);
+    }
+  }
+
   /** Schedule T-6h / T-1h reminders (config reminder_offsets_minutes) + the expiry belt job. */
   async scheduleHoldJobs(bookingId: string, expiresAt: Date): Promise<void> {
     const offsets = await this.config.get<number[]>('reminder_offsets_minutes');

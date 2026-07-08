@@ -7,7 +7,10 @@ import 'reflect-metadata';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module';
+
+// Parity is measured with payments OFF (08 §10): the spec omits payment paths. AppModule reads
+// PAYMENTS_ENABLED at module-definition time, so force it before the (dynamic) import below.
+process.env.PAYMENTS_ENABLED = 'false';
 
 function specPaths(): Set<string> {
   const yaml = readFileSync(join(__dirname, '..', 'openapi.yaml'), 'utf8');
@@ -27,6 +30,7 @@ function normalize(p: string): string {
 }
 
 async function main() {
+  const { AppModule } = await import('../src/app.module');
   const app = await NestFactory.create(AppModule, { logger: false });
   await app.init();
   const server = app.getHttpAdapter().getInstance();

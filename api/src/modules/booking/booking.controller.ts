@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Headers,
@@ -12,6 +13,8 @@ import {
 import { Request, Response } from 'express';
 import { BookingService } from './booking.service';
 import { BookingReadService } from './booking-read.service';
+import { ReservationService } from './reservation.service';
+import { ConfirmReservationDto } from './dto';
 import { CurrentUser, Roles } from '../auth/decorators';
 import { JwtUser } from '../auth/auth.types';
 import { clientIp, reqId } from '../../common/http/request-context';
@@ -21,20 +24,21 @@ export class BookingController {
   constructor(
     private readonly booking: BookingService,
     private readonly reads: BookingReadService,
+    private readonly reservations: ReservationService,
   ) {}
 
   // Status is set explicitly on the response (passthrough) so a replay can return 200 while a
-  // fresh hold returns 201. A fixed @HttpCode(201) would override the replay status at send time.
+  // fresh reservation returns 201. A fixed @HttpCode(201) would override the replay status.
   @Roles('CUSTOMER')
-  @Post('plots/:id/block')
-  async block(
+  @Post('plots/:id/reserve')
+  async reserve(
     @CurrentUser() user: JwtUser,
     @Param('id') plotId: string,
     @Headers('idempotency-key') idemKey: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const r = await this.booking.block(user.sub, plotId, idemKey, {
+    const r = await this.booking.reserve(user.sub, plotId, idemKey, {
       requestId: reqId(req),
       ip: clientIp(req) ?? undefined,
     });
@@ -46,6 +50,28 @@ export class BookingController {
       res.status(201);
     }
     return body;
+  }
+
+  @Roles('CUSTOMER')
+  @Post('reservations/:id/confirm')
+  @HttpCode(200)
+  confirm(
+    @CurrentUser() user: JwtUser,
+    @Param('id') bookingId: string,
+    @Body() dto: ConfirmReservationDto,
+    @Req() req: Request,
+  ) {
+    return this.reservations.confirm(bookingId, dto.challenge_id, dto.otp, { id: user.sub }, {
+      requestId: reqId(req),
+      ip: clientIp(req) ?? undefined,
+    });
+  }
+
+  @Roles('CUSTOMER')
+  @Post('reservations/:id/resend-otp')
+  @HttpCode(200)
+  resendOtp(@CurrentUser() user: JwtUser, @Param('id') bookingId: string) {
+    return this.reservations.resendOtp(bookingId, { id: user.sub });
   }
 
   @Roles('CUSTOMER', 'SUPER_ADMIN', 'OPERATIONS', 'SALES', 'FINANCE', 'AUDITOR')

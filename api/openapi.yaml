@@ -36,28 +36,19 @@ components:
             phone: { type: string, nullable: true }
             full_name: { type: string }
             role: { type: string }
-    BlockResult:
+    ReserveResult:
       type: object
       properties:
         booking_id: { type: string, format: uuid }
         plot_id: { type: string, format: uuid }
-        status: { type: string, enum: [BLOCKED] }
+        status: { type: string, enum: [PENDING_CONFIRMATION] }
+        plot_number: { type: string }
+        project_name: { type: string }
         total_price_paise: { type: integer, format: int64 }
-        advance_cap_paise: { type: integer, format: int64 }
-        min_advance_paise: { type: integer, format: int64 }
         blocked_at: { type: string, format: date-time }
         expires_at: { type: string, format: date-time }
-        hold_minutes: { type: integer }
-    PaymentOrder:
-      type: object
-      properties:
-        payment_id: { type: string, format: uuid }
-        gateway: { type: string }
-        gateway_order_id: { type: string }
-        gateway_key_id: { type: string }
-        amount_paise: { type: integer, format: int64 }
-        currency: { type: string, enum: [INR] }
-        booking_id: { type: string, format: uuid }
+        challenge_id: { type: string }
+        dev_otp: { type: string, nullable: true }
   responses:
     Error:
       description: Error envelope
@@ -204,45 +195,59 @@ paths:
       responses:
         '200': { description: plot }
         '404': { $ref: '#/components/responses/Error' }
-  /v1/plots/{id}/block:
+  /v1/plots/{id}/reserve:
     post:
-      summary: Block a plot (hold engine)
+      summary: Reserve a plot (reserve flow — 08 §5 step 1; issues a RESERVE email OTP)
       security: [{ bearer: [] }]
       parameters:
         - { in: path, name: id, required: true, schema: { type: string } }
         - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
       responses:
         '201':
-          description: hold created
+          description: reservation opened; verify via email OTP
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/BlockResult' }
-        '200': { description: idempotent replay of an existing hold }
+              schema: { $ref: '#/components/schemas/ReserveResult' }
+        '200': { description: idempotent replay of an existing reservation }
         '409': { $ref: '#/components/responses/Error' }
         '404': { $ref: '#/components/responses/Error' }
-  /v1/bookings/{id}/payment-order:
+  /v1/reservations/{id}/confirm:
     post:
-      summary: Create a gateway payment order (RERA-capped)
+      summary: Confirm a reservation with the email OTP (08 §5 step 2 → PENDING_APPROVAL)
       security: [{ bearer: [] }]
-      parameters:
-        - { in: path, name: id, required: true, schema: { type: string } }
-        - { in: header, name: Idempotency-Key, required: true, schema: { type: string } }
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amount_paise]
-              properties: { amount_paise: { type: integer, format: int64 } }
+              required: [challenge_id, otp]
+              properties:
+                challenge_id: { type: string }
+                otp: { type: string }
       responses:
-        '201':
-          description: order created
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PaymentOrder' }
+        '200': { description: confirmed; awaiting admin approval }
         '400': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /v1/reservations/{id}/resend-otp:
+    post:
+      summary: Re-issue the RESERVE email OTP (owner-only; same rate limits — docs/10 §5.3.2)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      responses:
+        '200':
+          description: fresh challenge issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  challenge_id: { type: string }
+                  retry_after_seconds: { type: integer }
+                  dev_otp: { type: string, nullable: true }
+        '409': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/Error' }
   /v1/bookings/{id}:
     get:
       summary: Booking detail (poll target; lazy-repaired)
@@ -260,13 +265,54 @@ paths:
         - { in: query, name: limit, schema: { type: integer } }
         - { in: query, name: cursor, schema: { type: string } }
       responses: { '200': { description: list } }
-  /v1/webhooks/payments/{gateway}:
-    post:
-      summary: Gateway payment webhook (signature-verified; the only path that confirms a booking)
-      parameters: [{ in: path, name: gateway, required: true, schema: { type: string } }]
+  /v1/admin/approvals:
+    get:
+      summary: List approvals (newest-pending-first; any admin role may view)
+      security: [{ bearer: [] }]
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: action, schema: { type: string } }
+      responses: { '200': { description: list } }
+  /v1/admin/approvals/{id}:
+    get:
+      summary: Approval detail incl. live guardrail re-check
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
       responses:
-        '200': { description: processed/duplicate/ignored/manual-review }
-        '400': { $ref: '#/components/responses/Error' }
+        '200': { description: detail }
+        '404': { $ref: '#/components/responses/Error' }
+  /v1/admin/approvals/{id}/approve:
+    post:
+      summary: Approve an approval (maker≠checker; guardrails re-run at decision — MC §1)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { note: { type: string } }
+      responses:
+        '200': { description: approved + applied }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/approvals/{id}/reject:
+    post:
+      summary: Reject an approval (note required — MC §1.6)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties: { note: { type: string } }
+      responses:
+        '200': { description: rejected }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /v1/admin/projects:
     post:
       summary: Create a DRAFT project

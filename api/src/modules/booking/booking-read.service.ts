@@ -80,7 +80,8 @@ export class BookingReadService {
   private async repairUserActivePlots(userId: string) {
     const plots = (
       await this.db.query<{ plot_id: string }>(
-        `SELECT DISTINCT plot_id FROM bookings WHERE user_id=$1 AND status='BLOCKED'`,
+        `SELECT DISTINCT plot_id FROM bookings
+           WHERE user_id=$1 AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL')`,
         [userId],
       )
     ).rows.map((r) => r.plot_id);

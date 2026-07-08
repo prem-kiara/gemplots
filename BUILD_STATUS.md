@@ -5,7 +5,7 @@ Spec authority: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) +
 (hold engine, expiry, approvals schema, audit) is the foundation being re-pointed to the
 no-integrations Gem Housing flows.
 
-Verified against real local Postgres 15 + Redis 7 (no DB mocks). **38 tests pass across 6 suites.**
+Verified against real local Postgres 15 + Redis 7 (no DB mocks). **47 tests pass across 7 suites.**
 
 ## Slice status (Gem Housing build order P0–P8)
 
@@ -13,7 +13,7 @@ Verified against real local Postgres 15 + Redis 7 (no DB mocks). **38 tests pass
 |---|---|---|---|
 | **P0** | Fix-list + rebrand + first commit | ✅ **Done** | F1–F7 applied; full Dhanam→Gem rebrand; 34 tests green; parity green; app boots, `/health` ok |
 | **P1 / D1** | Email service + email-OTP auth | ✅ **Done** | `V5__email_identity.sql`; EmailService+outbox+Console/Smtp drivers; auth by email; `PATCH /me`; dev_otp double-gate; 38 tests green; parity green |
-| P2 | **Reserve flow** (critical) | ⬜ Next | enum values + `reserve_confirmed_at` + active-index already migrated in P0 |
+| **P2 / D2** | **Reserve flow** (critical) | ✅ **Done** | `POST /plots/{id}/reserve` (replaces `/block`), `/reservations/{id}/confirm` + `/resend-otp`, RESERVE_PLOT approval handler + `/admin/approvals` endpoints, two-phase expiry + approval auto-withdraw, `NotificationFeedService.feed()`, payments dormancy (conditional mount, SQL fixtures); TP-P gates 1/2/3/7 green; 47 tests green; parity green (payments off) |
 | P3 | Notifications + admin read surface | ⬜ | |
 | P4 | Customer web app (mobile-first) | ⬜ | `web/` not yet created |
 | P5 | Admin portal core | ⬜ | |

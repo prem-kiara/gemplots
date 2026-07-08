@@ -65,14 +65,14 @@ describe('P0 fixes', () => {
       .expect(404);
   });
 
-  // ---- F3: idempotent replay must return 200, not 201 ----
-  it('F3: first block → 201; replay with same Idempotency-Key → 200 + Idempotency-Replay header', async () => {
+  // ---- F3: idempotent replay must return 200, not 201 (now on /reserve) ----
+  it('F3: first reserve → 201; replay with same Idempotency-Key → 200 + Idempotency-Replay header', async () => {
     const { token } = await customerToken();
     const plotId = await firstPlotId(app);
     const key = randomUUID();
 
     const first = await http
-      .post(`/v1/plots/${plotId}/block`)
+      .post(`/v1/plots/${plotId}/reserve`)
       .set('authorization', `Bearer ${token}`)
       .set('idempotency-key', key)
       .expect(201);
@@ -80,7 +80,7 @@ describe('P0 fixes', () => {
     expect(first.headers['idempotency-replay']).toBeUndefined();
 
     const replay = await http
-      .post(`/v1/plots/${plotId}/block`)
+      .post(`/v1/plots/${plotId}/reserve`)
       .set('authorization', `Bearer ${token}`)
       .set('idempotency-key', key)
       .expect(200);
@@ -88,8 +88,8 @@ describe('P0 fixes', () => {
     expect(replay.body.booking_id).toBe(bookingId);
   });
 
-  // ---- F4: hold-limit race — parallel blocks by one user cannot overshoot the cap ----
-  it('F4: 3 parallel blocks on 3 plots by one user (max=2) → exactly 2 succeed', async () => {
+  // ---- F4: hold-limit race — parallel reserves by one user cannot overshoot the cap ----
+  it('F4: 3 parallel reserves on 3 plots by one user (max=2) → exactly 2 succeed', async () => {
     const [userId] = await makeCustomers(app, 1);
     const plots = (await db(app).query(`SELECT id FROM plots ORDER BY plot_number`)).rows.map(
       (r) => r.id,
@@ -97,7 +97,7 @@ describe('P0 fixes', () => {
     expect(plots.length).toBeGreaterThanOrEqual(3);
 
     const results = await Promise.allSettled(
-      plots.slice(0, 3).map((pid) => booking.block(userId, pid, randomUUID())),
+      plots.slice(0, 3).map((pid) => booking.reserve(userId, pid, randomUUID())),
     );
     const ok = results.filter((r) => r.status === 'fulfilled');
     const limited = results.filter(
@@ -107,7 +107,8 @@ describe('P0 fixes', () => {
     expect(limited.length).toBe(1);
 
     const active = await db(app).query(
-      `SELECT count(*)::int n FROM bookings WHERE user_id=$1 AND status='BLOCKED'`,
+      `SELECT count(*)::int n FROM bookings WHERE user_id=$1
+         AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL')`,
       [userId],
     );
     expect(active.rows[0].n).toBe(2);

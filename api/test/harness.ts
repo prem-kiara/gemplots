@@ -69,6 +69,36 @@ export async function firstPlotId(app: INestApplication): Promise<string> {
   return (await db(app).query(`SELECT id FROM plots ORDER BY plot_number LIMIT 1`)).rows[0].id;
 }
 
+/**
+ * SQL fixture for a DORMANT BLOCKED booking (08 §10). The reserve flow no longer produces BLOCKED
+ * bookings, but the payment/webhook suite still exercises the dormant order + webhook machinery
+ * against them. Inserts a BLOCKED booking (1440-min hold, +1d expiry, price from the plot) and
+ * marks the plot BLOCKED. Returns the booking id. Uses the owner conn so it also works when the
+ * app role's constraints tighten. The two-PENDING-status sweeper filters guarantee these are
+ * never swept.
+ */
+export async function makeDormantBlockedBooking(
+  _app: INestApplication,
+  userId: string,
+  plotId: string,
+): Promise<string> {
+  const price = (await adminPool.query(`SELECT price_paise FROM plots WHERE id=$1`, [plotId]))
+    .rows[0].price_paise;
+  const b = await adminPool.query(
+    `INSERT INTO bookings
+       (plot_id, user_id, status, total_price_paise, hold_minutes, expires_at, idempotency_key)
+     VALUES ($1,$2,'BLOCKED',$3,1440, now() + interval '1 day', $4)
+     RETURNING id`,
+    [plotId, userId, price, randomKey()],
+  );
+  await adminPool.query(`UPDATE plots SET status='BLOCKED' WHERE id=$1`, [plotId]);
+  return b.rows[0].id;
+}
+
+function randomKey(): string {
+  return 'fixture-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 /** Create N fresh customer users (keyed by unique email now — 08 §4), return their ids. */
 export async function makeCustomers(app: INestApplication, n: number): Promise<string[]> {
   const ids: string[] = [];

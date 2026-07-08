@@ -6,9 +6,9 @@ import {
   resetDynamic,
   firstPlotId,
   makeCustomers,
+  makeDormantBlockedBooking,
   closeAdminPool,
 } from './harness';
-import { BookingService } from '../src/modules/booking/booking.service';
 import { BookingReadService } from '../src/modules/booking/booking-read.service';
 import { PaymentService } from '../src/modules/payment/payment.service';
 
@@ -47,13 +47,11 @@ function signedWebhook(opts: {
 
 describe('TP §2.3 webhook verification & idempotency', () => {
   let app: INestApplication;
-  let booking: BookingService;
   let payment: PaymentService;
   let reads: BookingReadService;
 
   beforeAll(async () => {
     app = await makeApp();
-    booking = app.get(BookingService);
     payment = app.get(PaymentService);
     reads = app.get(BookingReadService);
   });
@@ -66,10 +64,10 @@ describe('TP §2.3 webhook verification & idempotency', () => {
   async function blockAndOrder(amount?: number) {
     const plotId = await firstPlotId(app);
     const [userId] = await makeCustomers(app, 1);
-    const b = await booking.block(userId, plotId, randomUUID());
-    const amt = amount ?? b.advance_cap_paise;
-    const order = await payment.createOrder(userId, b.booking_id, amt, randomUUID());
-    return { userId, plotId, bookingId: b.booking_id, amount: amt, orderId: order.gateway_order_id };
+    const bookingId = await makeDormantBlockedBooking(app, userId, plotId);
+    const amt = amount ?? 18000000; // 10% of the seed plot's 180000000 price
+    const order = await payment.createOrder(userId, bookingId, amt, randomUUID());
+    return { userId, plotId, bookingId, amount: amt, orderId: order.gateway_order_id };
   }
 
   it('(a) valid captured → payment SUCCESS, booking + plot BOOKED, receipt issued (atomic)', async () => {

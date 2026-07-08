@@ -8,7 +8,13 @@ import { JwtAuthGuard, RolesGuard } from './modules/auth/guards';
 import { HealthModule } from './modules/health/health.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { BookingModule } from './modules/booking/booking.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { ApprovalModule } from './modules/approval/approval.module';
 import { PaymentModule } from './modules/payment/payment.module';
+
+// Read the flag at module-definition time (08 §10). main.ts loads .env before importing this
+// module, and tests set PAYMENTS_ENABLED in setup.ts before importing AppModule, so this is safe.
+const paymentsEnabled = process.env.PAYMENTS_ENABLED === 'true';
 
 @Module({
   imports: [
@@ -17,7 +23,11 @@ import { PaymentModule } from './modules/payment/payment.module';
     HealthModule,
     CatalogModule,
     BookingModule,
-    PaymentModule,
+    NotificationModule,
+    ApprovalModule,
+    // PaymentModule is mounted only when PAYMENTS_ENABLED=true (Invariant 8, 08 §10). Default off:
+    // the payment/webhook routes drop off the active surface and route-parity runs flag-off.
+    ...(paymentsEnabled ? [PaymentModule] : []),
   ],
   providers: [
     { provide: APP_FILTER, useClass: ErrorFilter },
