@@ -9,7 +9,8 @@ You are implementing a specified architecture, not designing one.
    protocol in [docs/07-build-instructions.md](docs/07-build-instructions.md) §0. Work exactly
    one slice per session, in order (P0 → P8).
 3. Spec precedence: [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) **wins over
-   docs 01–07** wherever they conflict; otherwise DM(02) > CF(04) > API(03).
+   docs 01–07** wherever they conflict; otherwise DM(02) > CF(04) > API(03). For anything in
+   `web/` (UI), [docs/10-ui-spec.md](docs/10-ui-spec.md) is the authority.
 
 **Never:**
 - Violate a HANDOVER invariant. In particular: nothing customer-facing may set a booking to

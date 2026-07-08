@@ -15,6 +15,7 @@ docs/07 §0). Treat the **Invariants** below as hard constraints.
 |---|---|
 | [docs/08-gemhousing-pivot.md](docs/08-gemhousing-pivot.md) | **The pivot spec — wins over every older doc on conflict.** Reserve flow, email/notifications/storage workarounds, frontend architecture, revised gates. |
 | [docs/09-build-instructions-v2.md](docs/09-build-instructions-v2.md) | **Current build order** (P0–P8) + review fix-list. |
+| [docs/10-ui-spec.md](docs/10-ui-spec.md) | **The UI spec** for `web/` (slices P4–P6): stack, design tokens, every screen with states, the map viewer + polygon editor, e2e gates. Wins on UI detail. |
 | docs/01–07 | Reference architecture, data model, API, critical flows, maker-checker, tests, v1 protocol — valid wherever 08 doesn’t override. |
 | [BUILD_STATUS.md](BUILD_STATUS.md) | Implementation progress (refreshed each slice). |
 

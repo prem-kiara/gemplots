@@ -49,50 +49,54 @@ reuse-chain, RBAC) + outbox rows asserted + TP-P §4 gate (prod hides `dev_otp`)
 
 ## Slice P2 — Reserve flow (the critical slice)
 
-**Specs:** 08 §5 (follow literally), §10; MC §2 registry.
+**Specs:** 08 §5 (follow literally), §10; MC §2 registry; UI §5.3.2.
 Schema per 08 §4 (enums, bookings, approvals action, settings). `reserve` endpoint reusing the
-CF §2 transaction shape (F3/F4 fixes live here); `confirm` endpoint; `RESERVE_PLOT` approval
-handler (guardrails + approve/reject apply); expiry rework (two-phase windows + approval
-auto-withdraw); payments dormancy: conditional module mount, spec paths removed, payment tests
-converted to SQL fixtures.
+CF §2 transaction shape (F3/F4 fixes live here); `confirm` endpoint; **plus
+`POST /reservations/{id}/resend-otp`** (owner-only, re-issues the RESERVE OTP under the same
+rate limits — docs/10 §5.3.2; without it a customer who closes the browser mid-confirmation is
+stranded); `RESERVE_PLOT` approval handler (guardrails + approve/reject apply); expiry rework
+(two-phase windows + approval auto-withdraw); payments dormancy: conditional module mount, spec
+paths removed, payment tests converted to SQL fixtures.
 **DoD:** **TP-P gates 1, 2, 3, 7 green** — these are the release gates. Manual walkthrough via
 curl: reserve → confirm (OTP from outbox/log) → approve as ops admin → booking RESERVED.
 
 ## Slice P3 — Notifications + admin read surface
 
-**Specs:** 08 §7; API §5.3/5.5/5.7 (bookings list, audit-logs, settings-RO).
+**Specs:** 08 §7; API §5.3/5.5/5.7 (bookings list, audit-logs, settings-RO); UI §5.3.3.
 `portal_notifications` + endpoints + `feed()` wired into every §5 transition and MC decisions +
-`NEW_CUSTOMER`/`MAP_ACTIVATED`/`PLOTS_IMPORTED`; outbox viewer endpoint; `GET /admin/bookings`.
+`NEW_CUSTOMER`/`MAP_ACTIVATED`/`PLOTS_IMPORTED`; outbox viewer endpoint; `GET /admin/bookings`;
+**plus `GET /admin/dashboard/summary`** (single aggregate for the admin home — docs/10 §5.3.3).
 **DoD:** TP-P §5 (event per transition, count endpoint); catalog gates TP-P §6 (the overdue
 CSV/geometry/activation tests) if not already landed in P0.
 
 ## Slice P4 — Web app: customer journey (mobile-first)
 
-**Specs:** 08 §12.
-Next.js scaffold (`web/`), same-origin `/api` proxy, PWA manifest; login (email OTP with
-demo-mode banner), project list, project detail with the interactive SVG-overlay map, plot
-bottom sheet, reserve → confirm screen (countdown, polls booking), `/me` reservations +
-profile form.
-**DoD:** scripted browser walkthrough on a 375-px viewport of the full journey against the
-local stack (document it in the PR with screenshots); Lighthouse mobile usability sanity pass.
+**Specs:** **docs/10 (the UI spec — §1–§7, §9–§13) is the authority**; 08 §12 is the summary.
+Next.js scaffold (`web/`) per 10 §1/§13, data layer per 10 §5, shared components per 10 §6;
+login, home, project detail with `PlotMap`, plot sheet, reserve → confirm journey, `/me`.
+Backend touch-up: `GET /projects/{idOrSlug}` accepts UUID or slug (10 §5.3.1) + OpenAPI.
+**DoD:** scripted browser walkthrough on a 375-px viewport with screenshots; Lighthouse mobile
+usability sanity pass; **Playwright smoke part 1 green (10 §14)**.
 
 ## Slice P5 — Web app: admin portal core
 
-**Specs:** 08 §7, §12; MC §4 screen layouts.
-Admin login, layout with notification bell (30 s poll), Approvals Inbox + Review Detail
-(guardrail panel, approve/reject with note), dashboard-lite cards (pending approvals, active
-holds with time-left, inventory by status), notifications feed page, emails outbox viewer.
+**Specs:** **docs/10 §8 (admin screens)**; MC §4 screen layouts; 08 §7.
+Admin shell + login, bell (10 §8.7), Approvals Inbox + Review Detail (reservation context +
+guardrail panels), dashboard (10 §8.2 from `dashboard/summary`), notifications feed page,
+emails outbox viewer.
 **DoD:** end-to-end through the browser: customer reserves+confirms (P4 UI) → bell rings →
-approve in inbox → customer sees RESERVED. Reject path too.
+approve in inbox → customer sees RESERVED; reject path too. **Playwright smoke part 2 green
+(10 §14) and the e2e suite wired into CI as a final stage.**
 
 ## Slice P6 — Web app: admin catalog management
 
-**Specs:** 08 §8, §12; API §5.1–5.2.
+**Specs:** **docs/10 §8.5** (catalog + `PolygonEditor`); 08 §8; API §5.1–5.2.
 Local-disk `StorageDriver` (+ `/files/*` static route) replacing the S3 no-op; projects CRUD
-UI; CSV plot upload UI (dry-run preview → commit); the polygon map editor; activation flow
-surfacing `MAP_INCOMPLETE`.
-**DoD:** create a new project through the UI alone: upload map → draw 3 polygons → activate →
-appears on the customer map; image survives an API restart (actually on disk).
+UI; CSV plot upload UI (dry-run preview → commit, 10 §8.5); the polygon map editor per 10 §8.5;
+activation flow surfacing `MAP_INCOMPLETE` as plot chips.
+**DoD:** create a new project through the UI alone: upload map → draw 3 polygons → assign →
+save → activate → appears on the customer map; image survives an API restart (actually on
+disk); editor round-trip documented with screenshots (10 §14).
 
 ## Slice P7 — Remaining maker-checker actions
 
