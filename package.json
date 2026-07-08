@@ -2,7 +2,7 @@
   "name": "gemplots",
   "version": "1.0.0",
   "private": true,
-  "workspaces": ["api"],
+  "workspaces": ["api", "web"],
   "scripts": {
     "migrate": "bash db/migrate.sh",
     "seed": "psql \"$DATABASE_URL_ADMIN\" -v ON_ERROR_STOP=1 -f db/seed.sql",

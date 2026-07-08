@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gp-primary: #047857;
+  --gp-primary-dark: #065f46;
+  --gp-accent: #d97706;
+  --gp-ink: #111827;
+  --gp-muted: #6b7280;
+  --gp-line: #e5e7eb;
+  --gp-bg: #f9fafb;
+  --gp-danger: #dc2626;
+  --gp-info: #2563eb;
+}
+
+html,
+body {
+  background: var(--gp-bg);
+  color: var(--gp-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes slideup {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Safe-area padding helper for the mobile bottom nav (§10). */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}

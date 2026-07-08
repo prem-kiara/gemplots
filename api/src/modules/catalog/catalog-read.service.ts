@@ -175,6 +175,18 @@ export class CatalogReadService {
         )
       ).rows[0];
       if (hold) out.blocked_until = new Date(hold.expires_at).toISOString();
+    } else if (p.status === 'ON_HOLD') {
+      // Reserve-flow hold: surface the active booking's decision/verification deadline so the
+      // customer plot sheet can render "on hold until …" (docs/10 §7.3).
+      const hold = (
+        await this.db.query(
+          `SELECT expires_at FROM bookings
+            WHERE plot_id=$1 AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL')
+            ORDER BY blocked_at DESC LIMIT 1`,
+          [plotId],
+        )
+      ).rows[0];
+      if (hold) out.blocked_until = new Date(hold.expires_at).toISOString();
     }
     return out;
   }

@@ -113,6 +113,16 @@ describe('TP-P §3 reserve flow (Invariant 7′)', () => {
     expect(audit.rows[0].n).toBe(1);
   });
 
+  it('GET /plots/{id} exposes blocked_until (active hold expires_at) while ON_HOLD', async () => {
+    const plotId = await firstPlotId(app);
+    const [userId] = await makeCustomers(app, 1);
+    const r = await booking.reserve(userId, plotId, randomUUID());
+    // Plot is now ON_HOLD with a PENDING_CONFIRMATION booking; the read API surfaces the deadline.
+    const res = await http.get(`/v1/plots/${plotId}`).expect(200);
+    expect(res.body.status).toBe('ON_HOLD');
+    expect(res.body.blocked_until).toBe(new Date(r.expires_at).toISOString());
+  });
+
   it('reject path: booking → REJECTED, plot → AVAILABLE, reservation_rejected email', async () => {
     const { plotId, bookingId, approvalId } = await reserveAndConfirm();
     const { token } = await opsAdmin();
