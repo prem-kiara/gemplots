@@ -18,6 +18,15 @@ export function canSeeAudit(user: User | null): boolean {
   return !!user && AUDIT_ROLES.includes(user.role);
 }
 
+/** SUPER_ADMIN + AUDITOR may see the Settings page; only SUPER_ADMIN may request a change. */
+export function canSeeSettings(user: User | null): boolean {
+  return !!user && AUDIT_ROLES.includes(user.role);
+}
+
+export function isSuperAdmin(user: User | null): boolean {
+  return !!user && user.role === 'SUPER_ADMIN';
+}
+
 export function currentUser(): User | null {
   return getUser();
 }

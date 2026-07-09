@@ -320,6 +320,136 @@ paths:
         '200': { description: rejected }
         '403': { $ref: '#/components/responses/Error' }
         '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/projects/{id}/publish:
+    post:
+      summary: Request PUBLISH_PROJECT (maker OPERATIONS) — files a PENDING approval (MC §3.7)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target]
+              properties:
+                target: { type: string, enum: [PUBLISHED, PAUSED, ARCHIVED] }
+      responses:
+        '202': { description: 'approval filed {approval_id, status}' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/projects/{id}/advance-cap:
+    post:
+      summary: Request UPDATE_ADVANCE_CAP (maker OPERATIONS) — files a PENDING approval (MC §3.8)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_percentage]
+              properties: { new_percentage: { type: number } }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/projects/{id}/bulk-price:
+    post:
+      summary: Request BULK_PRICE_UPDATE (maker OPERATIONS) — files a PENDING approval (MC §3.9)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [plot_id, new_price_paise]
+                    properties:
+                      plot_id: { type: string }
+                      new_price_paise: { type: integer }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/plots/{id}/price:
+    post:
+      summary: Request UPDATE_PLOT_PRICE (maker OPERATIONS/SALES) — files a PENDING approval (MC §3.1)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_price_paise]
+              properties: { new_price_paise: { type: integer } }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/plots/{id}/force-status:
+    post:
+      summary: Request FORCE_PLOT_STATUS (maker OPERATIONS) — files a PENDING approval (MC §3.2)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_status]
+              properties:
+                new_status: { type: string, enum: [AVAILABLE, WITHDRAWN, SOLD] }
+                note: { type: string }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/bookings/{id}/cancel:
+    post:
+      summary: Request CANCEL_BOOKING (maker SALES/OPERATIONS) — files a PENDING approval (MC §3.4)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties: { note: { type: string } }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /v1/admin/bookings/{id}/extend-hold:
+    post:
+      summary: Request EXTEND_HOLD (maker SALES) — the one sanctioned expires_at move (MC §3, Inv 5′)
+      security: [{ bearer: [] }]
+      parameters: [{ in: path, name: id, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [extra_minutes]
+              properties: { extra_minutes: { type: integer, minimum: 30, maximum: 2880 } }
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /v1/admin/projects:
     get:
       summary: List all projects incl. DRAFT (admin; optional status filter — newest first)
@@ -447,6 +577,23 @@ paths:
       responses:
         '200': { description: all settings }
         '403': { $ref: '#/components/responses/Error' }
+    post:
+      summary: Request UPDATE_GLOBAL_SETTING (maker SUPER_ADMIN; checker ≠ maker) — MC §3.10
+      security: [{ bearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, new_value]
+              properties:
+                key: { type: string }
+                new_value: {}
+      responses:
+        '202': { description: 'approval filed' }
+        '403': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /v1/admin/dashboard/summary:
     get:
       summary: Dashboard summary — approvals/holds/inventory/recent (docs/10 §5.3.3)

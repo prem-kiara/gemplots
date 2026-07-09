@@ -76,6 +76,16 @@ export function renderEmail(template: EmailTemplate, payload: EmailPayload): Ren
           `You're welcome to start a new reservation any time.` +
           SIGNATURE,
       };
+    case 'booking_cancelled':
+      return {
+        subject: `Your booking for plot ${p.plot_number} has been cancelled`,
+        bodyText:
+          `Hello,\n\nYour booking for plot ${p.plot_number} in ${p.project_name} ` +
+          `has been cancelled by our team.\n\n` +
+          (p.note ? `Note: ${p.note}\n\n` : '') +
+          `Please feel free to explore other available plots — we'd be glad to help.` +
+          SIGNATURE,
+      };
     default:
       // Faithful fallback: never throw on an unknown template.
       return {

@@ -50,6 +50,7 @@ export default function ReviewDetail({ params }: { params: { id: string } }) {
   const pending = data.status === 'PENDING';
   const approveDisabled = anyGuardrailFails || isMaker || !pending;
   const snap = data.snapshot;
+  const isReserve = data.action === 'RESERVE_PLOT';
 
   async function decide(kind: 'approve' | 'reject') {
     setSubmitting(true);
@@ -96,8 +97,33 @@ export default function ReviewDetail({ params }: { params: { id: string } }) {
       </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* Generic diff panel (non-reservation actions) — docs/10 §8.4: field / current / proposed */}
+        {!isReserve && data.diff && data.diff.length > 0 && (
+          <Card className="p-5">
+            <h2 className="mb-3 text-gp-base font-semibold text-ink">{S.admin.review.changes}</h2>
+            <table className="w-full text-gp-sm">
+              <thead>
+                <tr className="text-left text-muted">
+                  <th className="pb-2 font-medium">{S.admin.review.field}</th>
+                  <th className="pb-2 font-medium">{S.admin.review.current}</th>
+                  <th className="pb-2 font-medium">{S.admin.review.proposed}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.diff.map((d, i) => (
+                  <tr key={`${d.field}-${i}`} className="border-t border-line">
+                    <td className="py-2 pr-3 font-medium text-ink">{d.field}</td>
+                    <td className="py-2 pr-3 text-muted">{showVal(d.current)}</td>
+                    <td className="py-2 font-semibold text-primary">{showVal(d.proposed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
+
         {/* Reservation context (RESERVE_PLOT) */}
-        {snap && (
+        {isReserve && snap && (
           <Card className="p-5">
             <h2 className="mb-3 text-gp-base font-semibold text-ink">{S.admin.review.customer}</h2>
             <dl className="space-y-2 text-gp-sm">
@@ -220,6 +246,13 @@ export default function ReviewDetail({ params }: { params: { id: string } }) {
       </ConfirmDialog>
     </div>
   );
+}
+
+// Render a diff cell value: numbers/strings inline, objects as compact JSON.
+function showVal(v: unknown): string {
+  if (v == null) return '—';
+  if (typeof v === 'number' || typeof v === 'string') return String(v);
+  return JSON.stringify(v);
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {

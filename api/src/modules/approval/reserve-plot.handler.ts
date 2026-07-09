@@ -7,6 +7,7 @@ import {
   ApprovalActionHandler,
   ApprovalRow,
   Checker,
+  FieldDiff,
   GuardrailResult,
 } from './approval.types';
 
@@ -20,9 +21,22 @@ import {
 @Injectable()
 export class ReservePlotHandler implements ApprovalActionHandler {
   readonly action = 'RESERVE_PLOT' as const;
+  // The customer is the maker (the confirm flow files the request); admins approve.
+  readonly makerRoles: Role[] = ['CUSTOMER'];
   readonly approverRoles: Role[] = ['SUPER_ADMIN', 'OPERATIONS', 'SALES'];
 
   constructor(private readonly audit: AuditService) {}
+
+  summarize(approval: ApprovalRow): { title: string; diff: FieldDiff[] } {
+    const s = approval.snapshot ?? {};
+    const plot = s.plot?.plot_number ?? '?';
+    const project = s.plot?.project_name ?? '?';
+    const cust = s.customer?.email ?? '?';
+    return {
+      title: `Reserve ${plot} in ${project} for ${cust}`,
+      diff: [{ field: 'booking_status', current: 'PENDING_APPROVAL', proposed: 'RESERVED' }],
+    };
+  }
 
   async validate(approval: ApprovalRow, ex: Executor): Promise<GuardrailResult[]> {
     const bookingId = approval.entity_id;

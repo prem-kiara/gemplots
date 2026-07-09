@@ -34,9 +34,29 @@ export function DetailsTab({ project }: { project: AdminProjectDetail }) {
     amenities: (project.amenities ?? []).join(', '),
   });
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
 
   function set<K extends keyof typeof form>(k: K, v: (typeof form)[K]) {
     setForm((f) => ({ ...f, [k]: v }));
+  }
+
+  // PUBLISH_PROJECT maker action (MC §3.7). Files a PENDING approval (202) — does NOT mutate here.
+  async function requestPublish() {
+    setPublishing(true);
+    try {
+      await api(`/v1/admin/projects/${project.id}/publish`, {
+        method: 'POST',
+        body: { target: 'PUBLISHED' },
+      });
+      toast.success(S.admin.projectDetail.publishRequested);
+      qc.invalidateQueries({ queryKey: ['admin', 'approvals'] });
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'PENDING_APPROVAL_EXISTS')
+        toast.error(S.admin.projectDetail.publishPending);
+      else toast.error(err instanceof ApiError ? err.message : S.admin.projectDetail.publishError);
+    } finally {
+      setPublishing(false);
+    }
   }
 
   async function save() {
@@ -123,11 +143,11 @@ export function DetailsTab({ project }: { project: AdminProjectDetail }) {
         </div>
       </Card>
 
-      {/* Controlled (approval-gated) fields — read-only */}
+      {/* Controlled (approval-gated) fields — read-only, plus the Publish maker action */}
       <Card className="space-y-3 p-5">
         <h2 className="text-gp-base font-semibold text-ink">Controlled fields</h2>
         <ControlledRow label={S.admin.projects.fieldName} value={project.name} />
-        <ControlledRow label={S.admin.projects.status} value={project.status} />
+        <ControlledRow label={S.admin.projectDetail.currentStatus} value={project.status} />
         <ControlledRow
           label={S.admin.projects.fieldReraRegistered}
           value={project.rera_registered ? `Yes — ${project.rera_number ?? ''}` : 'No'}
@@ -141,6 +161,13 @@ export function DetailsTab({ project }: { project: AdminProjectDetail }) {
           value={project.hold_minutes_override != null ? `${project.hold_minutes_override} min` : '—'}
         />
         <p className="pt-1 text-gp-sm text-muted">{S.admin.projectDetail.publishNote}</p>
+        {(project.status === 'DRAFT' || project.status === 'PAUSED') && (
+          <div className="flex justify-end">
+            <Button onClick={requestPublish} loading={publishing}>
+              {S.admin.projectDetail.publish}
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

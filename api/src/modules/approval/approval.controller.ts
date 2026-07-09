@@ -23,9 +23,10 @@ export class ApprovalController {
     return this.approvals.detail(id);
   }
 
-  // Approve/reject are restricted to the RESERVE_PLOT approver roles at the route (roles guard),
-  // with the handler's approverRoles as the backstop. FINANCE + AUDITOR cannot decide (08 §5).
-  @Roles('SUPER_ADMIN', 'OPERATIONS', 'SALES')
+  // Approve/reject accept the UNION of every action's approver roles at the route (roles guard);
+  // the handler's approverRoles is the authoritative per-action gate (e.g. FINANCE may approve
+  // CANCEL_BOOKING but not RESERVE_PLOT). AUDITOR (read-only) can never decide.
+  @Roles('SUPER_ADMIN', 'OPERATIONS', 'SALES', 'FINANCE')
   @Post(':id/approve')
   @HttpCode(200)
   approve(
@@ -41,7 +42,7 @@ export class ApprovalController {
     );
   }
 
-  @Roles('SUPER_ADMIN', 'OPERATIONS', 'SALES')
+  @Roles('SUPER_ADMIN', 'OPERATIONS', 'SALES', 'FINANCE')
   @Post(':id/reject')
   @HttpCode(200)
   reject(

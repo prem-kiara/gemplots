@@ -17,6 +17,7 @@ import type {
   AuditRow,
   AdminProjectRow,
   AdminProjectDetail,
+  GlobalSetting,
 } from './types';
 import { markDevMode } from './devmode';
 
@@ -148,6 +149,13 @@ export function useAdminProject(id: string) {
     queryKey: ['admin', 'project', id],
     queryFn: () => api<AdminProjectDetail>(`/v1/admin/projects/${id}`),
     enabled: !!id,
+  });
+}
+
+export function useSettings() {
+  return useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api<{ items: GlobalSetting[] }>('/v1/admin/settings'),
   });
 }
 

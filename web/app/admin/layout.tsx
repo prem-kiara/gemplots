@@ -12,10 +12,11 @@ import {
   BellIcon,
   MailIcon,
   ScrollIcon,
+  CogIcon,
   LogOutIcon,
 } from '@/components/icons';
 import { getUser, hasSession } from '@/lib/api';
-import { canSeeAudit, isAdmin, logout } from '@/lib/auth';
+import { canSeeAudit, canSeeSettings, isAdmin, logout } from '@/lib/auth';
 import { useNotificationCount } from '@/lib/queries';
 import { S } from '@/lib/strings';
 import type { User } from '@/lib/types';
@@ -33,6 +34,9 @@ function Sidebar({ user }: { user: User }) {
     { href: '/admin/emails', label: S.admin.nav.emails, Icon: MailIcon },
     ...(canSeeAudit(user)
       ? [{ href: '/admin/audit', label: S.admin.nav.audit, Icon: ScrollIcon }]
+      : []),
+    ...(canSeeSettings(user)
+      ? [{ href: '/admin/settings', label: S.admin.nav.settings, Icon: CogIcon }]
       : []),
   ];
 

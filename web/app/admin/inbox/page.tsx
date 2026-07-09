@@ -11,6 +11,14 @@ import type { ApprovalListItem } from '@/lib/types';
 
 const ACTION_LABELS: Record<string, string> = {
   RESERVE_PLOT: S.admin.inbox.reservePlot,
+  UPDATE_PLOT_PRICE: S.admin.inbox.updatePlotPrice,
+  FORCE_PLOT_STATUS: S.admin.inbox.forcePlotStatus,
+  CANCEL_BOOKING: S.admin.inbox.cancelBooking,
+  EXTEND_HOLD: S.admin.inbox.extendHold,
+  PUBLISH_PROJECT: S.admin.inbox.publishProject,
+  UPDATE_ADVANCE_CAP: S.admin.inbox.updateAdvanceCap,
+  BULK_PRICE_UPDATE: S.admin.inbox.bulkPriceUpdate,
+  UPDATE_GLOBAL_SETTING: S.admin.inbox.updateGlobalSetting,
 };
 
 function ageColor(iso: string): string {
@@ -83,7 +91,11 @@ export default function InboxPage() {
             className="min-h-[38px] rounded-control border border-line bg-white px-2 text-ink"
           >
             <option value="">All</option>
-            <option value="RESERVE_PLOT">{S.admin.inbox.reservePlot}</option>
+            {Object.entries(ACTION_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </label>
       </div>

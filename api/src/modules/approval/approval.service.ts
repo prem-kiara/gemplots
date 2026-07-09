@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '../../common/db/db.service';
+import { DbService, Executor, isUniqueViolation } from '../../common/db/db.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { EmailService } from '../../common/email/email.service';
@@ -7,18 +7,37 @@ import { Err } from '../../common/errors';
 import { NotificationService } from '../notification/notification.service';
 import { Role } from '../auth/auth.types';
 import {
+  ApprovalAction,
   ApprovalActionHandler,
   ApprovalRow,
   Checker,
   GuardrailResult,
 } from './approval.types';
 import { ReservePlotHandler } from './reserve-plot.handler';
+import { UpdatePlotPriceHandler } from './handlers/update-plot-price.handler';
+import { ForcePlotStatusHandler } from './handlers/force-plot-status.handler';
+import { CancelBookingHandler } from './handlers/cancel-booking.handler';
+import { ExtendHoldHandler } from './handlers/extend-hold.handler';
+import { PublishProjectHandler } from './handlers/publish-project.handler';
+import { UpdateAdvanceCapHandler } from './handlers/update-advance-cap.handler';
+import { BulkPriceUpdateHandler } from './handlers/bulk-price-update.handler';
+import { UpdateGlobalSettingHandler } from './handlers/update-global-setting.handler';
+
+/** The maker requesting a controlled action. */
+export interface Requester {
+  id: string;
+  role: Role;
+  requestId?: string;
+  ip?: string;
+}
 
 /**
  * Generic approvals service (MC §2). Handlers register in a map keyed by action; request/approve/
- * reject are action-agnostic. In D2 only RESERVE_PLOT is registered. Guardrails re-run at approval
- * time (MC §1.3); the checker must be in approverRoles and must not be the requester (409
- * SELF_APPROVAL_FORBIDDEN; the maker_is_not_checker DB CHECK is the backstop).
+ * reject are action-agnostic. Guardrails re-run at approval time (MC §1.3); the checker must be in
+ * the handler's approverRoles and must not be the requester (409 SELF_APPROVAL_FORBIDDEN; the
+ * maker_is_not_checker DB CHECK is the backstop). SPEC-QUESTION: RESOLVE_MANUAL_REVIEW and
+ * INITIATE_REFUND (MC §3.5/§3.6) stay DORMANT with payments (08 §10) — no handler is registered;
+ * they land with payments go-live.
  */
 @Injectable()
 export class ApprovalService {
@@ -31,18 +50,101 @@ export class ApprovalService {
     private readonly email: EmailService,
     private readonly notify: NotificationService,
     private readonly reservePlot: ReservePlotHandler,
+    private readonly updatePlotPrice: UpdatePlotPriceHandler,
+    private readonly forcePlotStatus: ForcePlotStatusHandler,
+    private readonly cancelBooking: CancelBookingHandler,
+    private readonly extendHold: ExtendHoldHandler,
+    private readonly publishProject: PublishProjectHandler,
+    private readonly updateAdvanceCap: UpdateAdvanceCapHandler,
+    private readonly bulkPriceUpdate: BulkPriceUpdateHandler,
+    private readonly updateGlobalSetting: UpdateGlobalSettingHandler,
   ) {
     this.register(this.reservePlot);
+    this.register(this.updatePlotPrice);
+    this.register(this.forcePlotStatus);
+    this.register(this.cancelBooking);
+    this.register(this.extendHold);
+    this.register(this.publishProject);
+    this.register(this.updateAdvanceCap);
+    this.register(this.bulkPriceUpdate);
+    this.register(this.updateGlobalSetting);
   }
 
   private register(h: ApprovalActionHandler) {
     this.handlers.set(h.action, h);
   }
 
-  private handler(action: string): ApprovalActionHandler {
+  handler(action: string): ApprovalActionHandler {
     const h = this.handlers.get(action);
     if (!h) throw Err.badRequest('UNKNOWN_APPROVAL_ACTION', `No handler for ${action}`);
     return h;
+  }
+
+  /**
+   * File a controlled-action request (MC §1.1). Validates the maker's role, runs guardrails at
+   * request time (fail fast), inserts the PENDING approvals row (unique per (action,entity) →
+   * 409 PENDING_APPROVAL_EXISTS on a dup), and writes a request audit row in the same TX. The
+   * target entity is NOT mutated here. Returns {approval_id, status:'PENDING'}.
+   */
+  async request(
+    action: ApprovalAction,
+    entityType: string,
+    entityId: string,
+    payload: any,
+    snapshot: any,
+    reason: string,
+    requester: Requester,
+  ): Promise<{ approval_id: string; status: 'PENDING' }> {
+    const h = this.handler(action);
+    if (!h.makerRoles.includes(requester.role))
+      throw Err.forbidden('FORBIDDEN_ROLE', 'Your role may not request this action');
+
+    // Guardrails at request time (fail fast). Build a stand-in row so validate() can read payload.
+    const probe: ApprovalRow = {
+      id: '', action, entity_type: entityType, entity_id: entityId,
+      payload, snapshot, reason, status: 'PENDING', requested_by: requester.id,
+      decided_by: null, decided_at: null, decision_note: null, created_at: new Date().toISOString(),
+    };
+    const failures = (await h.validate(probe, this.db.pool)).filter((g) => !g.ok);
+    if (failures.length)
+      throw Err.conflict('GUARDRAIL_FAILED', 'Request guardrails failed', { failures });
+
+    try {
+      return await this.db.tx(async (tx) => {
+        const row = (
+          await tx.query(
+            `INSERT INTO approvals
+               (action, entity_type, entity_id, payload, snapshot, reason, requested_by)
+             VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6,$7)
+             RETURNING id`,
+            [
+              action,
+              entityType,
+              entityId,
+              JSON.stringify(payload ?? {}),
+              JSON.stringify(snapshot ?? {}),
+              reason,
+              requester.id,
+            ],
+          )
+        ).rows[0];
+        // The request itself is an auditable action (MC §3 — audit written for the REQUEST too).
+        await this.audit.log(
+          tx,
+          { id: requester.id, role: requester.role, requestId: requester.requestId, ip: requester.ip },
+          'approval.request',
+          'approval',
+          row.id,
+          null,
+          { action, entity_type: entityType, entity_id: entityId },
+        );
+        return { approval_id: row.id, status: 'PENDING' as const };
+      });
+    } catch (e: any) {
+      if (isUniqueViolation(e, 'uniq_pending_approval'))
+        throw Err.conflict('PENDING_APPROVAL_EXISTS', 'A pending approval already exists for this');
+      throw e;
+    }
   }
 
   /** GET /v1/admin/approvals — list, newest-pending-first, with maker email + entity summary. */
@@ -81,18 +183,20 @@ export class ApprovalService {
         decided_at: r.decided_at ? new Date(r.decided_at).toISOString() : null,
         decision_note: r.decision_note,
         created_at: new Date(r.created_at).toISOString(),
-        summary: this.summarize(r),
+        summary: this.summarize(r as ApprovalRow),
       })),
     };
   }
 
-  /** GET /v1/admin/approvals/{id} — detail incl. LIVE guardrail re-check. */
+  /** GET /v1/admin/approvals/{id} — detail incl. LIVE guardrail re-check + summarize diff. */
   async detail(id: string) {
     const r = await this.loadRow(id);
     const maker = (
       await this.db.query(`SELECT email FROM users WHERE id=$1`, [r.requested_by])
     ).rows[0];
-    const guardrails: GuardrailResult[] = await this.handler(r.action).validate(r, this.db.pool);
+    const h = this.handler(r.action);
+    const guardrails: GuardrailResult[] = await h.validate(r, this.db.pool);
+    const summarized = h.summarize(r);
     return {
       id: r.id,
       action: r.action,
@@ -108,20 +212,20 @@ export class ApprovalService {
       decided_at: r.decided_at ? new Date(r.decided_at).toISOString() : null,
       decision_note: r.decision_note,
       created_at: new Date(r.created_at).toISOString(),
-      summary: this.summarize(r),
+      summary: summarized.title,
+      title: summarized.title,
+      diff: summarized.diff,
       guardrails,
     };
   }
 
-  private summarize(r: any): string {
-    const s = r.snapshot ?? {};
-    if (r.action === 'RESERVE_PLOT') {
-      const plot = s.plot?.plot_number ?? '?';
-      const project = s.plot?.project_name ?? '?';
-      const cust = s.customer?.email ?? '?';
-      return `Reserve ${plot} in ${project} for ${cust}`;
+  /** One-line human summary for the inbox list, delegated to the handler. */
+  private summarize(r: ApprovalRow): string {
+    try {
+      return this.handlers.get(r.action)?.summarize(r).title ?? r.action;
+    } catch {
+      return r.action;
     }
-    return r.action;
   }
 
   private async loadRow(id: string): Promise<ApprovalRow> {
@@ -175,8 +279,15 @@ export class ApprovalService {
       return result;
     });
 
-    // Post-commit — best-effort, never rolls back an approved reservation.
+    // Post-commit — best-effort, never rolls back an applied action.
     if (r.action === 'RESERVE_PLOT') await this.afterReserveApprove(r);
+    if (h.afterApply) {
+      try {
+        await h.afterApply(r);
+      } catch {
+        /* post-commit side-effects are best-effort */
+      }
+    }
     return { id, status: 'APPROVED', ...applied };
   }
 
@@ -243,6 +354,13 @@ export class ApprovalService {
     });
 
     if (r.action === 'RESERVE_PLOT') await this.afterReserveReject(r, note);
+    if (h.afterReject) {
+      try {
+        await h.afterReject(r, note);
+      } catch {
+        /* best-effort */
+      }
+    }
     return { id, status: 'REJECTED' };
   }
 

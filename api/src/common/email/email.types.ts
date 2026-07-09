@@ -9,7 +9,8 @@ export type EmailTemplate =
   | 'reservation_received'
   | 'reservation_approved'
   | 'reservation_rejected'
-  | 'reservation_expired';
+  | 'reservation_expired'
+  | 'booking_cancelled';
 
 export type EmailPayload = Record<string, any>;
 

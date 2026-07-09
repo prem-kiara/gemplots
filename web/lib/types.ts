@@ -186,15 +186,34 @@ export interface Guardrail {
   detail?: string;
 }
 
+export interface FieldDiff {
+  field: string;
+  current: unknown;
+  proposed: unknown;
+}
+
 export interface ApprovalDetail extends ApprovalListItem {
   payload: Record<string, unknown> | null;
-  snapshot: {
-    booking?: { id: string; plot_id: string; status: string; total_price_paise: number };
-    plot?: { id: string; plot_number: string; project_id: string; project_name: string };
-    customer?: { id: string; name: string; email: string; phone: string | null };
-    reserve_confirmed_at?: string;
-  } | null;
+  // Reserve-flow snapshot has the reservation-context shape; other actions carry their own keys.
+  snapshot:
+    | ({
+        booking?: { id: string; plot_id: string; status: string; total_price_paise: number };
+        plot?: { id: string; plot_number: string; project_id: string; project_name: string };
+        customer?: { id: string; name: string; email: string; phone: string | null };
+        reserve_confirmed_at?: string;
+      } & Record<string, unknown>)
+    | null;
   guardrails: Guardrail[];
+  // Generic Review-screen diff (docs/10 §8.4) — current (live) vs proposed per field.
+  title?: string;
+  diff?: FieldDiff[];
+}
+
+export interface GlobalSetting {
+  key: string;
+  value: unknown;
+  updated_by: string | null;
+  updated_at: string | null;
 }
 
 export interface Notification {
