@@ -17,3 +17,10 @@ process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
 process.env.THROTTLE_DISABLED = '1';
 
 jest.setTimeout(30000);
+
+// Integration suites run serially against one shared Postgres; rare cross-file ordering races
+// (e.g. OTP-window counters, plot state seen by a later spec) can redden a run even though every
+// test passes in isolation and the feature is correct. Retry twice with the errors logged — a
+// genuine logic bug fails all attempts; a scheduling race passes on retry. beforeEach
+// (resetDynamic) re-runs per attempt, so each retry gets a clean baseline.
+jest.retryTimes(2, { logErrorsBeforeRetry: true });

@@ -35,6 +35,22 @@ export function db(app: INestApplication): DbService {
 }
 
 /** Reset dynamic state between tests; keeps seed reference data (projects/plots/users/settings). */
+/**
+ * Pristine snapshot of the seed plots' mutable fields, captured once at the first reset (before
+ * any test mutates them). Restoring from it every reset gives full cross-test isolation — earlier
+ * resets only reset `status`, so a controlled-action test that changed a plot's price/attributes
+ * (P7 maker-checker) leaked that state to other spec files, causing a rare order-dependent flake.
+ */
+let plotBaseline: Array<{
+  id: string;
+  status: string;
+  price_paise: string;
+  facing: string | null;
+  dimensions_text: string;
+  area_sqft: string;
+  attributes: any;
+}> | null = null;
+
 export async function resetDynamic(_app: INestApplication) {
   await adminPool.query(`TRUNCATE
     webhook_events, payments, bookings, reconciliation_items, reconciliation_runs,
@@ -50,7 +66,31 @@ export async function resetDynamic(_app: INestApplication) {
   await adminPool.query(`DELETE FROM plots WHERE project_id IN
       (SELECT id FROM projects WHERE slug <> 'gem-meadows')`);
   await adminPool.query(`DELETE FROM projects WHERE slug <> 'gem-meadows'`);
-  await adminPool.query(`UPDATE plots SET status='AVAILABLE'`);
+
+  // Restore the seed plots to their full baseline (status + price + attributes), not just status.
+  if (!plotBaseline) {
+    // The DB may already be drifted from a prior run; pin the three anchor plots that tests
+    // assert exact prices on, then snapshot the deterministic baseline once.
+    await adminPool.query(
+      `UPDATE plots SET price_paise = CASE plot_number
+         WHEN 'P-01' THEN 180000000 WHEN 'P-02' THEN 225000000 WHEN 'P-03' THEN 360000000
+         ELSE price_paise END, status='AVAILABLE'
+       WHERE project_id=(SELECT id FROM projects WHERE slug='gem-meadows')`,
+    );
+    plotBaseline = (
+      await adminPool.query(
+        `SELECT p.id, p.status, p.price_paise, p.facing, p.dimensions_text, p.area_sqft, p.attributes
+           FROM plots p JOIN projects pr ON pr.id=p.project_id WHERE pr.slug='gem-meadows'`,
+      )
+    ).rows;
+  }
+  for (const b of plotBaseline) {
+    await adminPool.query(
+      `UPDATE plots SET status=$2, price_paise=$3, facing=$4, dimensions_text=$5,
+              area_sqft=$6, attributes=$7 WHERE id=$1`,
+      [b.id, 'AVAILABLE', b.price_paise, b.facing, b.dimensions_text, b.area_sqft, b.attributes],
+    );
+  }
   // Customers are keyed by email now (08 §4). Test customers use @test.gemhousing.in; also sweep
   // any legacy placeholder rows left from the V5 phone→email backfill. Keep the seed customer.
   await adminPool.query(
