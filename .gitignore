@@ -14,3 +14,6 @@ coverage/
 # Local-disk storage driver writes here (Invariant 11 / 08 §8) — never committed.
 uploads/
 api/uploads/
+web/.next-e2e/
+test-results/
+playwright-report/

@@ -3,6 +3,8 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { CommonModule } from './common/common.module';
 import { ErrorFilter } from './common/http/error.filter';
 import { RequestIdMiddleware } from './common/http/request-context';
+import { HttpLoggerMiddleware } from './common/http/http-logger.middleware';
+import { ThrottleGuard } from './common/http/throttle.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard, RolesGuard } from './modules/auth/guards';
 import { HealthModule } from './modules/health/health.module';
@@ -33,12 +35,14 @@ const paymentsEnabled = process.env.PAYMENTS_ENABLED === 'true';
   ],
   providers: [
     { provide: APP_FILTER, useClass: ErrorFilter },
-    { provide: APP_GUARD, useClass: JwtAuthGuard }, // runs first: authenticate
-    { provide: APP_GUARD, useClass: RolesGuard }, // then authorize
+    { provide: APP_GUARD, useClass: ThrottleGuard }, // runs first: rate-limit (before auth)
+    { provide: APP_GUARD, useClass: JwtAuthGuard }, // then: authenticate
+    { provide: APP_GUARD, useClass: RolesGuard }, // then: authorize
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestIdMiddleware).forRoutes('*');
+    // request_id first so the access logger can thread it into every line.
+    consumer.apply(RequestIdMiddleware, HttpLoggerMiddleware).forRoutes('*');
   }
 }

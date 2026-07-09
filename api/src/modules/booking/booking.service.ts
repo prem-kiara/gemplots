@@ -74,12 +74,20 @@ export class BookingService {
     const maxHolds = await this.config.int('max_active_holds_per_user');
     // Fast, friendly pre-check outside the TX. NOT authoritative — the same count is re-run inside
     // the TX under a per-user row lock (F4). The active-hold cap counts only pending reservations.
+    //
+    // Idempotency safety: exclude any booking that shares THIS idempotency_key. Under high
+    // same-key concurrency (Invariant 4), a straggler can pass step-1's replay check before the
+    // winner commits, then reach this pre-check AFTER the winner commits — the winner's own row is
+    // this same request's result, not a genuine second hold. Counting it would surface a spurious
+    // HOLD_LIMIT_EXCEEDED / DUPLICATE_ACTIVE_HOLD instead of the correct replay; the straggler
+    // instead falls through to the TX and resolves as a replay in the catch below.
     const active = Number(
       (
         await this.db.query(
           `SELECT count(*)::int AS n FROM bookings
-             WHERE user_id=$1 AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL')`,
-          [userId],
+             WHERE user_id=$1 AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL')
+               AND idempotency_key <> $2`,
+          [userId, idemKey],
         )
       ).rows[0].n,
     );
@@ -88,11 +96,13 @@ export class BookingService {
         max_active_holds: maxHolds,
       });
 
-    // Friendlier duplicate message when this user already actively holds this plot.
+    // Friendlier duplicate message when this user already actively holds this plot — but never for
+    // this request's own same-key booking (that is a replay, resolved at step 1 / in the catch).
     const dup = await this.db.query(
       `SELECT 1 FROM bookings WHERE user_id=$1 AND plot_id=$2
-         AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL','RESERVED')`,
-      [userId, plotId],
+         AND status IN ('PENDING_CONFIRMATION','PENDING_APPROVAL','RESERVED')
+         AND idempotency_key <> $3`,
+      [userId, plotId, idemKey],
     );
     if (dup.rowCount && dup.rowCount > 0)
       throw Err.conflict('DUPLICATE_ACTIVE_HOLD', 'You already hold this plot');

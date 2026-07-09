@@ -11,5 +11,9 @@ process.env.PG_KEY_ID = 'rzp_test_key';
 process.env.PAYMENT_GATEWAY = 'RAZORPAY';
 process.env.PAYMENTS_ENABLED = 'true'; // keep the dormant payment suite exercised (08 §10)
 process.env.REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+// P8: relax the global rate limiter in the suite so bursty tests (50-way reserve, OTP
+// send/attempt limits) exercise the DB guards, not the HTTP throttle. ThrottleGuard treats
+// THROTTLE_DISABLED=1 as "off".
+process.env.THROTTLE_DISABLED = '1';
 
 jest.setTimeout(30000);

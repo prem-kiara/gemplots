@@ -86,6 +86,29 @@ export function renderEmail(template: EmailTemplate, payload: EmailPayload): Ren
           `Please feel free to explore other available plots — we'd be glad to help.` +
           SIGNATURE,
       };
+    case 'reserve_reminder':
+      return {
+        subject: `Reminder: confirm your reservation for plot ${p.plot_number}`,
+        bodyText:
+          `Hello,\n\nYour reservation request for plot ${p.plot_number} is still waiting for ` +
+          `you to confirm your email. The confirmation window is closing soon — please enter ` +
+          `your code to keep the plot on hold.\n\n` +
+          `If you no longer need it, you can safely ignore this — the hold will be released ` +
+          `automatically.` +
+          SIGNATURE,
+      };
+    case 'approval_reminder':
+      return {
+        subject: `Reminder: reservation for plot ${p.plot_number} needs a decision`,
+        bodyText:
+          `A customer reservation is awaiting approval and its decision window is closing soon.\n\n` +
+          `Customer: ${p.customer_email}\n` +
+          `Project:  ${p.project_name}\n` +
+          `Plot:     ${p.plot_number}\n` +
+          `Approval: ${p.approval_id}\n\n` +
+          `Please review and decide in the admin portal before it auto-expires.` +
+          SIGNATURE,
+      };
     default:
       // Faithful fallback: never throw on an unknown template.
       return {

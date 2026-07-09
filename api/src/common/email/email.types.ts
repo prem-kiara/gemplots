@@ -10,7 +10,10 @@ export type EmailTemplate =
   | 'reservation_approved'
   | 'reservation_rejected'
   | 'reservation_expired'
-  | 'booking_cancelled';
+  | 'booking_cancelled'
+  // P8 deadline reminders (never mutate the deadline — reminder only).
+  | 'reserve_reminder'
+  | 'approval_reminder';
 
 export type EmailPayload = Record<string, any>;
 

@@ -1,0 +1,49 @@
+# Caddyfile — reverse proxy for plots.gemhousing.in (docs/08 §12, DEPLOY.md).
+#
+# One host in front of two local processes:
+#   * Nest API  (node dist/main.js)        on 127.0.0.1:3000  — serves /api/* and /files/*
+#   * Next.js   (next start -p 3001)        on 127.0.0.1:3001  — serves everything else (the SPA)
+#
+# Caddy terminates TLS automatically (ACME / Let's Encrypt) for the domain below. The API is
+# same-origin under /api/*, matching the web app's fetch('/api/...') calls; the Next rewrite used
+# in dev is replaced here by this edge routing in prod. Uploaded blobs are served by the API at
+# /files/* (local-disk StorageDriver, Invariant 11).
+
+plots.gemhousing.in {
+	encode zstd gzip
+
+	# --- API: strip the /api prefix and forward to Nest on :3000 ---
+	# The web client calls /api/v1/... ; Nest mounts routes at /v1/... , so drop the /api prefix.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# --- Uploaded files (site-plan images etc.) served by the API's static /files mount ---
+	handle /files/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# --- Everything else → the Next.js app on :3001 ---
+	handle {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	# Security headers (baseline; tune CSP once asset origins are finalised).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Health endpoint for uptime checks (proxied to the API).
+	handle /health {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	log {
+		output file /var/log/caddy/plots.gemhousing.in.log
+		format json
+	}
+}
